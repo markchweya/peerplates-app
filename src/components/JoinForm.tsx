@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MotionDiv } from "@/app/ui/motion";
+import SelectField from "@/components/fields/SelectField";
 
 type Question = {
   key: string;
@@ -84,7 +85,6 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Signup failed. Try again.");
 
-      // We'll implement /thanks next; pass id/code via query for now
       const qp = new URLSearchParams();
       if (data?.id) qp.set("id", data.id);
       if (data?.referral_code) qp.set("code", data.referral_code);
@@ -95,6 +95,11 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
       setSubmitting(false);
     }
   };
+
+  const inputBase =
+    "h-12 w-full rounded-2xl border border-[#fcb040] bg-white px-4 font-semibold text-slate-900 outline-none focus:ring-4 focus:ring-[rgba(252,176,64,0.30)] placeholder:text-slate-500";
+  const textareaBase =
+    "w-full rounded-2xl border border-[#fcb040] bg-white px-4 py-3 font-semibold text-slate-900 outline-none focus:ring-4 focus:ring-[rgba(252,176,64,0.30)] placeholder:text-slate-500 min-h-[110px]";
 
   return (
     <main className="min-h-screen bg-white text-slate-900">
@@ -109,7 +114,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
             <div className="h-10 w-10 rounded-xl bg-[#fcb040]" />
             <div className="text-lg font-semibold tracking-tight">PeerPlates</div>
           </Link>
-          <div className="text-sm text-slate-500 whitespace-nowrap">
+          <div className="text-sm text-slate-900 font-semibold whitespace-nowrap">
             {role === "consumer" ? "Consumer" : "Vendor"} waitlist
           </div>
         </MotionDiv>
@@ -118,15 +123,15 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55, delay: 0.08 }}
-          className="mt-8 sm:mt-10 rounded-3xl border border-slate-200 bg-white p-5 sm:p-7 shadow-sm"
+          className="mt-8 sm:mt-10 rounded-3xl border border-[#fcb040] bg-white p-5 sm:p-7 shadow-sm"
         >
           <h1 className="font-extrabold tracking-tight leading-tight text-[clamp(1.8rem,3.5vw,2.2rem)]">
             {title}
           </h1>
-          <p className="mt-2 text-slate-600 text-sm sm:text-base">{subtitle}</p>
+          <p className="mt-2 text-slate-900/70 text-sm sm:text-base">{subtitle}</p>
 
           {ref ? (
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">
+            <div className="mt-4 rounded-2xl border border-[#fcb040] bg-white p-4 text-sm">
               <span className="font-semibold">Referral detected:</span>{" "}
               <span className="font-mono">{ref}</span>
             </div>
@@ -140,7 +145,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
                 <input
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  className="h-12 rounded-2xl border border-slate-200 px-4 outline-none focus:border-[#fcb040]"
+                  className={inputBase}
                   placeholder="e.g. Christine Gesare"
                 />
               </div>
@@ -150,7 +155,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
                 <input
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="h-12 rounded-2xl border border-slate-200 px-4 outline-none focus:border-[#fcb040]"
+                  className={inputBase}
                   placeholder="you@email.com"
                   type="email"
                 />
@@ -162,7 +167,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
               <input
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="h-12 rounded-2xl border border-slate-200 px-4 outline-none focus:border-[#fcb040]"
+                className={inputBase}
                 placeholder="+254..."
                 type="tel"
               />
@@ -172,8 +177,19 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
             <div className="mt-2 grid gap-4">
               {questions.map((q) => {
                 const val = answers[q.key] ?? "";
-                const common =
-                  "rounded-2xl border border-slate-200 px-4 outline-none focus:border-[#fcb040]";
+
+                if (q.type === "select") {
+                  return (
+                    <SelectField
+                      key={q.key}
+                      label={q.label}
+                      required={q.required}
+                      value={val}
+                      onChange={(v) => onChange(q.key, v)}
+                      options={q.options || []}
+                    />
+                  );
+                }
 
                 return (
                   <div key={q.key} className="grid gap-2">
@@ -185,27 +201,14 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
                       <textarea
                         value={val}
                         onChange={(e) => onChange(q.key, e.target.value)}
-                        className={`${common} py-3 min-h-[110px]`}
+                        className={textareaBase}
                         placeholder={q.placeholder || ""}
                       />
-                    ) : q.type === "select" ? (
-                      <select
-                        value={val}
-                        onChange={(e) => onChange(q.key, e.target.value)}
-                        className={`${common} h-12`}
-                      >
-                        <option value="">Select…</option>
-                        {(q.options || []).map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt}
-                          </option>
-                        ))}
-                      </select>
                     ) : (
                       <input
                         value={val}
                         onChange={(e) => onChange(q.key, e.target.value)}
-                        className={`${common} h-12`}
+                        className={inputBase}
                         placeholder={q.placeholder || ""}
                         type={q.type || "text"}
                       />
@@ -216,7 +219,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
             </div>
 
             {error ? (
-              <div className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              <div className="mt-2 rounded-2xl border border-[#fcb040] bg-white p-4 text-sm text-slate-900">
                 {error}
               </div>
             ) : null}
@@ -232,13 +235,13 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
 
               <Link
                 href="/"
-                className="rounded-2xl border border-slate-200 px-6 py-3 text-center font-extrabold transition hover:bg-slate-50 hover:-translate-y-[1px]"
+                className="rounded-2xl border border-[#fcb040] bg-white px-6 py-3 text-center font-extrabold text-slate-900 transition hover:-translate-y-[1px]"
               >
                 Back
               </Link>
             </div>
 
-            <div className="text-xs text-slate-500">
+            <div className="text-xs text-slate-900/60">
               By submitting, you agree to receive updates about early access.
             </div>
           </form>
