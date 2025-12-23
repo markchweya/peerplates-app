@@ -13,6 +13,8 @@ export default function ThanksPage() {
 
   const [baseUrl, setBaseUrl] = useState("");
   const [copied, setCopied] = useState(false);
+
+  // Only used for consumers (Option A)
   const [position, setPosition] = useState<number | null>(null);
   const [posLoading, setPosLoading] = useState(false);
 
@@ -27,17 +29,20 @@ export default function ThanksPage() {
     return `${baseUrl}${joinPath}?ref=${encodeURIComponent(code)}`;
   }, [code, baseUrl, role]);
 
+  // ✅ Option A: only fetch/display queue position for consumers
   useEffect(() => {
     if (!id) return;
+    if (role !== "consumer") return;
 
     setPosLoading(true);
     fetch(`/api/queue-position?id=${encodeURIComponent(id)}`)
       .then((r) => r.json())
       .then((d) => {
         if (typeof d?.position === "number") setPosition(d.position);
+        else setPosition(null);
       })
       .finally(() => setPosLoading(false));
-  }, [id]);
+  }, [id, role]);
 
   const copy = async () => {
     if (!referralLink) return;
@@ -49,6 +54,8 @@ export default function ThanksPage() {
       // ignore
     }
   };
+
+  const isConsumer = role === "consumer";
 
   return (
     <main className="min-h-screen bg-white text-slate-900">
@@ -83,16 +90,25 @@ export default function ThanksPage() {
             We’ll email you with updates and early access.
           </p>
 
-          {/* Queue position */}
-          <div className="mt-5 rounded-3xl border border-[#fcb040] bg-white p-4">
-            <div className="text-sm font-extrabold">Your queue position</div>
-            <div className="mt-1 text-2xl font-extrabold">
-              {id ? (posLoading ? "Loading..." : position ? `#${position}` : "—") : "—"}
+          {/* ✅ Option A: consumers see queue position, vendors do not */}
+          {isConsumer ? (
+            <div className="mt-5 rounded-3xl border border-[#fcb040] bg-white p-4">
+              <div className="text-sm font-extrabold">Your queue position</div>
+              <div className="mt-1 text-2xl font-extrabold">
+                {id ? (posLoading ? "Loading..." : position ? `#${position}` : "—") : "—"}
+              </div>
+              <div className="mt-1 text-xs text-slate-900/60">
+                MVP estimate based on signup time and role.
+              </div>
             </div>
-            <div className="mt-1 text-xs text-slate-900/60">
-              MVP estimate based on signup time and role.
+          ) : (
+            <div className="mt-5 rounded-3xl border border-[#fcb040] bg-white p-4">
+              <div className="text-sm font-extrabold">Vendor review</div>
+              <div className="mt-1 text-sm text-slate-900/70">
+                We’ll review your application and email you as soon as you’re approved for early access.
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Referral block (only if code exists) */}
           {code ? (

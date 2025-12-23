@@ -16,7 +16,6 @@ function supabaseAdmin() {
 export async function GET(req: Request) {
   try {
     const sb = supabaseAdmin();
-
     const { searchParams } = new URL(req.url);
     const id = (searchParams.get("id") || "").trim();
 
@@ -24,9 +23,10 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing id" }, { status: 400 });
     }
 
+    // ✅ Only select columns that exist
     const { data: entry, error: entryErr } = await sb
       .from("waitlist_entries")
-      .select("id, role, created_at, vendor_sort")
+      .select("id, role, created_at")
       .eq("id", id)
       .single();
 
@@ -34,37 +34,21 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // For Vendors: use vendor_sort if set (lower = higher priority), then created_at
+    // ✅ Option A: Vendors do NOT get a queue position in MVP
     if (entry.role === "vendor") {
-      const { data: vendors, error: vErr } = await sb
-        .from("waitlist_entries")
-        .select("id, created_at, vendor_sort")
-        .eq("role", "vendor");
-
-      if (vErr) {
-        return NextResponse.json({ error: vErr.message }, { status: 500 });
-      }
-
-      const list = (vendors || []).slice().sort((a: any, b: any) => {
-        const as = a.vendor_sort ?? Number.MAX_SAFE_INTEGER;
-        const bs = b.vendor_sort ?? Number.MAX_SAFE_INTEGER;
-        if (as !== bs) return as - bs;
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      });
-
-      const idx = list.findIndex((x: any) => x.id === entry.id);
       return NextResponse.json({
         id: entry.id,
         role: entry.role,
-        position: idx >= 0 ? idx + 1 : null,
+        position: null,
       });
     }
 
-    // Consumers: MVP ordering by created_at (referrals come in TJ-005)
+    // ✅ Consumers: MVP ordering by created_at
+    // (In TJ-005 this will change to points/referrals ranking)
     const { count, error: countErr } = await sb
       .from("waitlist_entries")
       .select("id", { count: "exact", head: true })
-      .eq("role", entry.role)
+      .eq("role", "consumer")
       .lte("created_at", entry.created_at);
 
     if (countErr) {
