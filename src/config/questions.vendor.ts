@@ -1,17 +1,24 @@
 export const vendorQuestions = [
   {
     key: "business_name",
-    label: "Business / Brand name",
+    label: "Business / brand name",
     required: true,
     type: "text" as const,
     placeholder: "e.g. Mama Njeri Kitchen",
   },
   {
+    key: "location",
+    label: "Where are you located / serving area?",
+    required: true,
+    type: "text" as const,
+    placeholder: "e.g. Nairobi, Kilimani",
+  },
+  {
     key: "food_type",
     label: "What type of food do you sell?",
     required: true,
-    type: "text" as const,
-    placeholder: "e.g. Swahili, Nigerian, Kenyan, etc.",
+    type: "textarea" as const,
+    placeholder: "Kenyan, Nigerian, Swahili, pastries…",
   },
   {
     key: "daily_capacity",
@@ -19,5 +26,40 @@ export const vendorQuestions = [
     required: true,
     type: "select" as const,
     options: ["1–10", "11–30", "31–60", "60+"],
+  },
+  {
+    key: "delivery",
+    label: "Do you offer delivery?",
+    required: true,
+    type: "select" as const,
+    options: ["Yes", "No", "Partner only (Uber/Bolt/etc.)"],
+  },
+  {
+    key: "compliance",
+    label: "Do you have food handling/hygiene compliance?",
+    required: true,
+    type: "select" as const,
+    options: ["Yes", "In progress", "No"],
+  },
+  {
+    key: "link",
+    label: "Instagram/Website link (or photos link)",
+    required: false,
+    type: "text" as const,
+    placeholder: "https://instagram.com/…",
+  },
+  {
+    key: "price_range",
+    label: "What’s your price range per meal?",
+    required: false,
+    type: "select" as const,
+    options: ["< KES 200", "KES 200–500", "KES 500–1,000", "KES 1,000+"],
+  },
+  {
+    key: "notes",
+    label: "Anything else we should know?",
+    required: false,
+    type: "textarea" as const,
+    placeholder: "Add anything that helps us onboard you faster…",
   },
 ];

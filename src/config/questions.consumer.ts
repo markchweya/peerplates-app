@@ -4,7 +4,7 @@ export const consumerQuestions = [
     label: "Where are you located?",
     required: true,
     type: "text" as const,
-    placeholder: "e.g. Nairobi",
+    placeholder: "e.g. Nairobi, Westlands",
   },
   {
     key: "frequency",
@@ -19,5 +19,33 @@ export const consumerQuestions = [
     required: false,
     type: "select" as const,
     options: ["< KES 200", "KES 200–500", "KES 500–1,000", "KES 1,000+"],
+  },
+  {
+    key: "priority",
+    label: "What do you care about most?",
+    required: true,
+    type: "select" as const,
+    options: [
+      "Price",
+      "Taste",
+      "Convenience",
+      "Portion size",
+      "Hygiene",
+      "Delivery speed",
+    ],
+  },
+  {
+    key: "diet",
+    label: "Any dietary preferences?",
+    required: false,
+    type: "select" as const,
+    options: ["None", "Halal", "Vegan", "Vegetarian", "Gluten-free", "Other"],
+  },
+  {
+    key: "invite_reason",
+    label: "What would make you invite friends?",
+    required: false,
+    type: "textarea" as const,
+    placeholder: "Discounts, early access, free delivery…",
   },
 ];
