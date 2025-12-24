@@ -1,3 +1,4 @@
+// src/app/api/queue-position/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -23,6 +24,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing id" }, { status: 400 });
     }
 
+    // Confirm entry exists + role
     const { data: entry, error: entryErr } = await sb
       .from("waitlist_entries")
       .select("id, role")
@@ -33,12 +35,16 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // ✅ Option A: vendors do NOT get a queue position
+    // ✅ Vendors: no public queue position in TJ-005
     if (entry.role === "vendor") {
-      return NextResponse.json({ id: entry.id, role: entry.role, position: null });
+      return NextResponse.json({
+        id: entry.id,
+        role: entry.role,
+        position: null,
+      });
     }
 
-    // ✅ Consumers: rank by referral_points DESC, then created_at ASC
+    // ✅ Consumers: order by referral_points DESC, then created_at ASC
     const { data: consumers, error: cErr } = await sb
       .from("waitlist_entries")
       .select("id, referral_points, created_at")
@@ -52,13 +58,15 @@ export async function GET(req: Request) {
       const ap = Number(a.referral_points ?? 0);
       const bp = Number(b.referral_points ?? 0);
       if (ap !== bp) return bp - ap; // higher points first
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); // earlier first
+      return (
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      ); // earlier signup first
     });
 
     const idx = list.findIndex((x: any) => x.id === id);
 
     return NextResponse.json({
-      id,
+      id: entry.id,
       role: "consumer",
       position: idx >= 0 ? idx + 1 : null,
     });

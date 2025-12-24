@@ -1,3 +1,4 @@
+// src/app/admin/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -6,7 +7,6 @@ import { MotionDiv } from "@/app/ui/motion";
 
 type RoleFilter = "all" | "consumer" | "vendor";
 type StatusFilter = "all" | "pending" | "reviewed" | "approved" | "rejected";
-
 type ReviewStatus = "pending" | "reviewed" | "approved" | "rejected";
 
 type Entry = {
@@ -18,6 +18,7 @@ type Entry = {
   is_student: boolean | null;
   university: string | null;
   answers: Record<string, any>;
+
   referral_code: string | null;
   referred_by: string | null;
 
@@ -25,7 +26,7 @@ type Entry = {
   vendor_priority_score: number;
   vendor_queue_override: number | null;
 
-  // referrals (TJ-005)
+  // TJ-005 referrals
   referrals_count?: number | null;
   referral_points?: number | null;
 
@@ -116,7 +117,7 @@ export default function AdminPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `Failed (${res.status})`);
 
-      setRows(Array.isArray(data?.rows) ? data.rows : []);
+      setRows(Array.isArray(data?.rows) ? (data.rows as Entry[]) : []);
       setTotal(Number(data?.total || 0));
     } catch (e: any) {
       setErr(e?.message || "Failed to load");
@@ -137,6 +138,7 @@ export default function AdminPage() {
     setSelected(r);
     setNotesDraft(r.admin_notes || "");
     setStatusDraft(r.review_status || "pending");
+
     setVendorOverrideDraft(
       r.vendor_queue_override === null || r.vendor_queue_override === undefined
         ? ""
@@ -200,7 +202,9 @@ export default function AdminPage() {
         reviewed_by: "admin",
         ...(selected.role === "vendor" ? { vendor_queue_override } : {}),
       });
+
       updateRowInState(updated);
+
       setStatusDraft(updated.review_status);
       setNotesDraft(updated.admin_notes || "");
       setVendorOverrideDraft(
@@ -507,12 +511,11 @@ export default function AdminPage() {
                           {r.review_status}
                         </span>
                       </td>
+
                       <td className="p-3">{r.role === "vendor" ? r.vendor_queue_override ?? "—" : "—"}</td>
 
                       {/* Score: vendors show vendor_priority_score; consumers show referral_points */}
-                      <td className="p-3 font-semibold">
-                        {r.role === "vendor" ? r.vendor_priority_score : points}
-                      </td>
+                      <td className="p-3 font-semibold">{r.role === "vendor" ? r.vendor_priority_score : points}</td>
 
                       {/* Referrals: only meaningful for consumers */}
                       <td className="p-3 text-slate-700">
@@ -605,11 +608,9 @@ export default function AdminPage() {
                 <div className="mt-5 grid gap-2 rounded-3xl border border-[#fcb040] bg-white p-4">
                   <div className="text-sm font-extrabold">Referrals</div>
                   <div className="text-sm text-slate-700">
-                    <span className="font-semibold">Points:</span>{" "}
-                    {selected.referral_points ?? 0}{" "}
+                    <span className="font-semibold">Points:</span> {selected.referral_points ?? 0}{" "}
                     <span className="text-slate-500">•</span>{" "}
-                    <span className="font-semibold">Signups:</span>{" "}
-                    {selected.referrals_count ?? 0}
+                    <span className="font-semibold">Signups:</span> {selected.referrals_count ?? 0}
                   </div>
                   {selected.referral_code ? (
                     <div className="text-xs text-slate-500">
@@ -649,8 +650,7 @@ export default function AdminPage() {
                 <div className="mt-5 grid gap-2 rounded-3xl border border-[#fcb040] bg-white p-4">
                   <div className="text-sm font-extrabold">Manual vendor queue override</div>
                   <div className="text-xs text-slate-600">
-                    Lower number = earlier in queue. Leave blank to fall back to auto ordering
-                    (score + time).
+                    Lower number = earlier in queue. Leave blank to fall back to auto ordering (score + time).
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-center">

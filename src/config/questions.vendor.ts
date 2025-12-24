@@ -1,57 +1,68 @@
+// src/config/questions.vendor.ts
+import type { Question } from "@/components/JoinForm";
+
 export const vendorQuestions = [
   {
     key: "is_student",
     label: "Are you a student?",
     required: true,
-    type: "select" as const,
+    type: "select",
     options: ["Yes", "No"],
   },
   {
     key: "university",
     label: "Which university?",
     required: true,
-    type: "select" as const,
+    type: "select",
     options: [
       "University of Nottingham (UoN)",
       "Nottingham Trent University (NTU)",
-      "Not a student",
+      "Other",
     ],
   },
   {
-    key: "sell_what",
-    label: "What do you sell? (Cuisine / category)",
+    key: "currently_sell",
+    label: "Do you currently sell food already?",
     required: true,
-    type: "textarea" as const,
-    placeholder: "e.g. Nigerian meals, pastries, cupcakes…",
+    type: "select",
+    options: ["Yes", "No"],
   },
   {
-    key: "instagram_handle",
-    label: "What’s your business Instagram page name?",
+    key: "sell_categories",
+    label: "What do you sell / would you like to sell?",
     required: true,
-    type: "text" as const,
-    placeholder: "@yourbusiness (or tick: I don’t have one)",
+    type: "checkboxes",
+    options: [
+      "African",
+      "Caribbean",
+      "Chinese",
+      "Indian",
+      "Japanese",
+      "Korean",
+      "Thai",
+      "Turkish",
+      "Middle Eastern",
+      "Mediterranean",
+      "Italian",
+      "Pastries",
+      "Cakes",
+      "Desserts",
+      "Other",
+      "None of the above",
+    ],
   },
   {
-    key: "closest_campus",
-    label: "Which campus is closest to you?",
+    key: "campus_bus",
+    label: "Closest campus + minutes by bus",
     required: true,
-    type: "select" as const,
-    options: ["UoN", "NTU"],
+    type: "text",
+    placeholder: "e.g. Jubilee Campus, 20 minutes",
   },
-  {
-    key: "bus_minutes",
-    label: "Approximately how many minutes by bus?",
-    required: true,
-    type: "number" as const,
-    placeholder: "e.g. 15",
-  },
-
-  // ✅ Compliance tick-boxes (required)
   {
     key: "compliance_readiness",
     label: "Compliance readiness (tick all that apply)",
     required: true,
-    type: "checkboxes" as const,
+    type: "checkboxes",
     options: [
       "Registered with Nottingham City Council",
       "Level 2 Hygiene Certificate",
@@ -60,15 +71,27 @@ export const vendorQuestions = [
       "None of the above",
     ],
   },
-
-  // ✅ Optional certificate upload (MVP-safe)
+  {
+    key: "portions_per_week",
+    label: "How many meal portions do you currently sell per week?",
+    required: true,
+    type: "select",
+    options: ["0", "1–5", "6–10", "11–20", "21–40", "40+"],
+  },
+  {
+    key: "price_range",
+    label: "Typical price range per item",
+    required: true,
+    type: "select",
+    options: ["£3–£5", "£5–£7", "£7–£10", "£10–£15", "£15+"],
+  },
   {
     key: "certificate_upload",
     label: "Upload certificate (optional)",
     required: false,
-    type: "file" as const,
+    type: "file",
     accept: [".pdf", ".jpg", ".jpeg", ".png"],
-    helpText:
-      "Optional — upload now or later. This helps us onboard you faster.",
+    helpText: "Optional — upload now or later. This helps us onboard you faster.",
+    uploadKey: "certificate_upload",
   },
-];
+] satisfies Question[];

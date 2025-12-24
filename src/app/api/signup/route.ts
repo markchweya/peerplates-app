@@ -1,4 +1,3 @@
-// app/api/signup/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { vendorPriorityScoreFromAnswers } from "../../../lib/vendorPriorityScore";
@@ -8,21 +7,11 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 type Role = "consumer" | "vendor";
 
-/**
- * TJ-005 referrals
- * - When someone signs up with ?ref=XXXX, we:
- *   1) store referred_by = XXXX on the new row
- *   2) find the referrer row by referral_code = XXXX (prevent self-referral)
- *   3) increment referrer.referrals_count and referrer.referral_points
- *
- * NOTE: This expects these columns to exist on waitlist_entries:
- * - referrals_count integer default 0
- * - referral_points integer default 0
- *
- * And this RPC to exist:
- * - increment_referral_stats(p_referrer_id uuid, p_points int)
- */
 const REFERRAL_POINTS_PER_SIGNUP = 10;
+
+// Basic spam protection:
+// - Honeypot field (hp) must be empty
+// - Duplicate protection is handled by DB unique index (role, lower(email))
 
 function supabaseAdmin() {
   if (!SUPABASE_URL || !SERVICE_KEY) {
@@ -30,6 +19,7 @@ function supabaseAdmin() {
       "Missing Supabase env vars. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local"
     );
   }
+
   return createClient(SUPABASE_URL, SERVICE_KEY, {
     auth: { persistSession: false },
   });
@@ -47,7 +37,6 @@ function randomCode(len = 8) {
 }
 
 async function generateUniqueReferralCode(sb: ReturnType<typeof supabaseAdmin>) {
-  // small retry loop to avoid rare collisions
   for (let i = 0; i < 8; i++) {
     const code = randomCode(8);
     const { data, error } = await sb
@@ -60,7 +49,6 @@ async function generateUniqueReferralCode(sb: ReturnType<typeof supabaseAdmin>) 
     if (!data) return code;
   }
 
-  // fallback
   return `${randomCode(6)}${Date.now().toString().slice(-2)}`;
 }
 
@@ -80,6 +68,35 @@ function pickUniversity(raw: unknown): string | null {
   return u ? u : null;
 }
 
+function normalizeBool(v: unknown): boolean {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    return s === "true" || s === "1" || s === "yes" || s === "on";
+  }
+  return false;
+}
+
+// Optional: enforce “max 3 cuisines” for common keys (safe even if you rename later)
+function enforceMax3Cuisines(answers: any) {
+  const keys = ["top_cuisines", "cuisines", "sell_categories"];
+  for (const k of keys) {
+    const v = answers?.[k];
+    if (Array.isArray(v) && v.length > 3) {
+      throw new Error("Please select up to 3 cuisines.");
+    }
+  }
+}
+
+function getClientIp(req: Request): string | null {
+  // Works behind proxies/CDN sometimes
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0].trim();
+  const xrip = req.headers.get("x-real-ip");
+  if (xrip) return xrip.trim();
+  return null;
+}
+
 export async function POST(req: Request) {
   const sb = supabaseAdmin();
 
@@ -91,6 +108,15 @@ export async function POST(req: Request) {
     let emailRaw: unknown;
     let phoneRaw: unknown;
     let refRaw: unknown;
+
+    let acceptedPrivacyRaw: unknown;
+    // accept BOTH names (old + new) so you don’t break anything:
+    let marketingConsentRaw: unknown; // marketing_consent (old)
+    let acceptedMarketingRaw: unknown; // accepted_marketing (new)
+    let hpRaw: unknown;
+
+    let captchaVerifiedRaw: unknown;
+    let signupSourceRaw: unknown;
 
     let answers: any = {};
     let certificateFile: File | null = null;
@@ -104,6 +130,16 @@ export async function POST(req: Request) {
       phoneRaw = fd.get("phone");
       refRaw = fd.get("ref") ?? fd.get("referred_by") ?? fd.get("referredBy");
 
+      acceptedPrivacyRaw = fd.get("accepted_privacy");
+
+      marketingConsentRaw = fd.get("marketing_consent");
+      acceptedMarketingRaw = fd.get("accepted_marketing");
+
+      hpRaw = fd.get("hp");
+
+      captchaVerifiedRaw = fd.get("captcha_verified");
+      signupSourceRaw = fd.get("signup_source");
+
       const answersRaw = String(fd.get("answers") || "{}");
       try {
         answers = JSON.parse(answersRaw);
@@ -111,7 +147,6 @@ export async function POST(req: Request) {
         answers = {};
       }
 
-      // IMPORTANT: JoinForm uses uploadKey; your vendor questions likely use "certificate_upload"
       const maybeFile = fd.get("certificate_upload");
       certificateFile = maybeFile instanceof File ? maybeFile : null;
     } else {
@@ -123,8 +158,22 @@ export async function POST(req: Request) {
       phoneRaw = body?.phone;
       refRaw = body?.ref ?? body?.referred_by ?? body?.referredBy;
 
+      acceptedPrivacyRaw = body?.accepted_privacy;
+
+      marketingConsentRaw = body?.marketing_consent;
+      acceptedMarketingRaw = body?.accepted_marketing;
+
+      hpRaw = body?.hp;
+
+      captchaVerifiedRaw = body?.captcha_verified;
+      signupSourceRaw = body?.signup_source;
+
       answers = body?.answers || {};
     }
+
+    // bot honeypot
+    const hp = String(hpRaw || "").trim();
+    if (hp) return jsonError("Bot detected.", 400);
 
     const role = String(roleRaw || "").trim().toLowerCase() as Role;
     const fullName = String(fullNameRaw || "").trim();
@@ -132,15 +181,31 @@ export async function POST(req: Request) {
     const phone = phoneRaw ? String(phoneRaw).trim() : null;
     const ref = refRaw ? String(refRaw).trim() : null;
 
+    const accepted_privacy = normalizeBool(acceptedPrivacyRaw);
+
+    // ✅ FIX: DB expects accepted_marketing, but frontend might send marketing_consent
+    const accepted_marketing =
+      normalizeBool(acceptedMarketingRaw) || normalizeBool(marketingConsentRaw);
+
+    const captcha_verified = normalizeBool(captchaVerifiedRaw);
+    const signup_source =
+      typeof signupSourceRaw === "string" ? signupSourceRaw.trim() || null : null;
+
     if (role !== "consumer" && role !== "vendor") return jsonError("Invalid role.");
     if (!fullName) return jsonError("Full name is required.");
     if (!email) return jsonError("Email is required.");
 
-    const isStudent = normalizeStudent(answers?.is_student);
-    const university = pickUniversity(answers?.university);
+    // privacy required
+    if (!accepted_privacy) return jsonError("Privacy/Terms acceptance is required.");
 
-    // ✅ Validate referral (if provided)
-    // store referred_by only when valid, and award points to referrer
+    enforceMax3Cuisines(answers);
+
+    // Student/university consistency:
+    const isStudent = normalizeStudent(answers?.is_student);
+    let university = pickUniversity(answers?.university);
+    if (isStudent === false) university = null;
+
+    // Validate referral (if provided)
     let referred_by: string | null = null;
     let referrer_id: string | null = null;
 
@@ -151,7 +216,6 @@ export async function POST(req: Request) {
         .eq("referral_code", ref)
         .maybeSingle();
 
-      // valid code + prevent self-referral
       if (!refErr && referrer && String(referrer.email || "").toLowerCase() !== email) {
         referred_by = ref;
         referrer_id = referrer.id as string;
@@ -160,7 +224,8 @@ export async function POST(req: Request) {
 
     const referral_code = await generateUniqueReferralCode(sb);
 
-    const vendor_priority_score = role === "vendor" ? vendorPriorityScoreFromAnswers(answers) : 0;
+    const vendor_priority_score =
+      role === "vendor" ? vendorPriorityScoreFromAnswers(answers) : 0;
 
     // Upload certificate (vendor only)
     let certificate_url: string | null = null;
@@ -193,14 +258,11 @@ export async function POST(req: Request) {
           upsert: false,
         });
 
-      if (up.error) {
-        return jsonError(`Upload failed: ${up.error.message}`, 500);
-      }
+      if (up.error) return jsonError(`Upload failed: ${up.error.message}`, 500);
 
-      certificate_url = path; // private bucket path
+      certificate_url = path;
     }
 
-    // NOTE: review_status etc. are handled by DB defaults (TJ-004)
     const insertPayload = {
       role,
       full_name: fullName,
@@ -217,6 +279,19 @@ export async function POST(req: Request) {
 
       vendor_priority_score,
       certificate_url,
+
+      // ✅ columns that exist in YOUR DB:
+      accepted_privacy,
+      accepted_marketing,
+      consented_at: new Date().toISOString(),
+
+      // optional extras (also exist in your DB list)
+      privacy_version: "v1",
+      signup_source,
+      captcha_verified,
+
+      request_ip: getClientIp(req),
+      user_agent: req.headers.get("user-agent") || null,
     };
 
     const { data, error } = await sb
@@ -233,19 +308,14 @@ export async function POST(req: Request) {
       return jsonError(msg || "Database insert failed.", 500);
     }
 
-    // ✅ Award referral points to referrer (both roles can share links)
-    // Queue movement is ONLY for consumers (handled in queue-position logic).
+    // Award referral stats (do not block signup if this fails)
     if (referrer_id) {
       const { error: rpcErr } = await sb.rpc("increment_referral_stats", {
         p_referrer_id: referrer_id,
         p_points: REFERRAL_POINTS_PER_SIGNUP,
       });
-
-      // if RPC is missing, surface a useful error
       if (rpcErr) {
-        // We do NOT fail the signup if points fail; we just log the issue back
-        // (you can change this behavior if you want it strict)
-        console.warn("increment_referral_stats failed:", rpcErr.message);
+        // swallow to avoid breaking signup
       }
     }
 

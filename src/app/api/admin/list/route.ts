@@ -4,20 +4,24 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const ADMIN_TOKEN = process.env.ADMIN_DASHBOARD_TOKEN || ""; // optional if you use it
+const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
 
 function supabaseAdmin() {
   if (!SUPABASE_URL || !SERVICE_KEY) {
     throw new Error("Missing Supabase env vars. Check .env.local");
   }
-  return createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+  return createClient(SUPABASE_URL, SERVICE_KEY, {
+    auth: { persistSession: false },
+  });
 }
 
-// If your admin uses a token, keep this. If not, you can remove this block.
 function isAuthorized(req: Request) {
-  if (!ADMIN_TOKEN) return true; // no token set => skip auth
-  const header = req.headers.get("x-admin-token") || "";
-  return header === ADMIN_TOKEN;
+  // If you didn't set ADMIN_SECRET, allow access (dev-friendly).
+  // In production, you SHOULD set ADMIN_SECRET so this becomes enforced.
+  if (!ADMIN_SECRET) return true;
+
+  const header = (req.headers.get("x-admin-secret") || "").trim();
+  return header === ADMIN_SECRET;
 }
 
 export async function GET(req: Request) {
@@ -44,12 +48,27 @@ export async function GET(req: Request) {
           "role",
           "full_name",
           "email",
-          "created_at",
-          "review_status",
-          "vendor_queue_override",
-          "vendor_priority_score",
+          "phone",
+          "is_student",
+          "university",
+          "answers",
+
+          "referral_code",
+          "referred_by",
           "referrals_count",
           "referral_points",
+
+          "vendor_priority_score",
+          "vendor_queue_override",
+          "certificate_url",
+
+          "review_status",
+          "admin_notes",
+          "reviewed_at",
+          "reviewed_by",
+
+          "created_at",
+          "updated_at",
         ].join(","),
         { count: "exact" }
       );
@@ -70,11 +89,10 @@ export async function GET(req: Request) {
     // Sorting:
     // - vendors: override asc (nulls last) then vendor_priority_score desc then created_at asc
     // - consumers: referral_points desc then created_at asc
+    // - all: newest first
     if (role === "vendor") {
-      // Supabase JS doesn't support NULLS LAST directly; we can still order override asc,
-      // and treat nulls as last in UI sorting if needed. Usually this is fine.
       query = query
-        .order("vendor_queue_override", { ascending: true })
+        .order("vendor_queue_override", { ascending: true, nullsFirst: false })
         .order("vendor_priority_score", { ascending: false })
         .order("created_at", { ascending: true });
     } else if (role === "consumer") {
@@ -82,7 +100,6 @@ export async function GET(req: Request) {
         .order("referral_points", { ascending: false })
         .order("created_at", { ascending: true });
     } else {
-      // all roles: newest first
       query = query.order("created_at", { ascending: false });
     }
 
@@ -94,15 +111,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const rows =
-      (data || []).map((r: any) => {
-        const score =
-          r.role === "vendor"
-            ? (r.vendor_priority_score ?? 0)
-            : (r.referral_points ?? 0); // 👈 consumer score shown in admin
-
-        return { ...r, score };
-      }) || [];
+    // Add a convenience "score" field:
+    // - vendor score = vendor_priority_score
+    // - consumer score = referral_points
+    const rows = (data || []).map((r: any) => ({
+      ...r,
+      score: r.role === "vendor" ? r.vendor_priority_score ?? 0 : r.referral_points ?? 0,
+    }));
 
     return NextResponse.json({
       rows,
@@ -111,6 +126,9 @@ export async function GET(req: Request) {
       offset,
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Unexpected server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || "Unexpected server error" },
+      { status: 500 }
+    );
   }
 }
