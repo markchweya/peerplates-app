@@ -8,7 +8,7 @@ export const metadata = {
 
 export default function ConsumerJoinPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-white" />}>
+    <Suspense fallback={<div className="p-6">Loading…</div>}>
       <JoinForm
         role="consumer"
         title="Join the Consumer waitlist"
