@@ -20,8 +20,15 @@ type Entry = {
   answers: Record<string, any>;
   referral_code: string | null;
   referred_by: string | null;
+
+  // vendor
   vendor_priority_score: number;
   vendor_queue_override: number | null;
+
+  // referrals (TJ-005)
+  referrals_count?: number | null;
+  referral_points?: number | null;
+
   certificate_url: string | null;
   certificate_signed_url?: string | null;
 
@@ -37,12 +44,9 @@ const BRAND = "#fcb040";
 const SECRET_KEY = "peerplates_admin_secret";
 
 function pillClass(status: ReviewStatus) {
-  if (status === "approved")
-    return "bg-green-50 text-green-700 border border-green-200";
-  if (status === "rejected")
-    return "bg-red-50 text-red-700 border border-red-200";
-  if (status === "reviewed")
-    return "bg-slate-100 text-slate-700 border border-slate-200";
+  if (status === "approved") return "bg-green-50 text-green-700 border border-green-200";
+  if (status === "rejected") return "bg-red-50 text-red-700 border border-red-200";
+  if (status === "reviewed") return "bg-slate-100 text-slate-700 border border-slate-200";
   return "bg-amber-50 text-amber-800 border border-amber-200";
 }
 
@@ -243,6 +247,8 @@ export default function AdminPage() {
       "reviewed_by",
       "vendor_priority_score",
       "vendor_queue_override",
+      "referral_points",
+      "referrals_count",
       "referral_code",
       "referred_by",
       "created_at",
@@ -266,6 +272,8 @@ export default function AdminPage() {
           r.reviewed_by ?? "",
           r.vendor_priority_score ?? "",
           r.vendor_queue_override ?? "",
+          r.referral_points ?? "",
+          r.referrals_count ?? "",
           r.referral_code ?? "",
           r.referred_by ?? "",
           r.created_at ?? "",
@@ -405,9 +413,7 @@ export default function AdminPage() {
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
               <div className="text-lg font-extrabold tracking-tight">Waitlist Admin</div>
-              <div className="text-sm text-slate-600 mt-1">
-                {loading ? "Loading…" : `${total} total`}
-              </div>
+              <div className="text-sm text-slate-600 mt-1">{loading ? "Loading…" : `${total} total`}</div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3 md:grid-cols-4 w-full md:max-w-3xl">
@@ -476,42 +482,66 @@ export default function AdminPage() {
                   <th className="p-3 text-left">Status</th>
                   <th className="p-3 text-left">Override</th>
                   <th className="p-3 text-left">Score</th>
+                  <th className="p-3 text-left">Referrals</th>
                   <th className="p-3 text-left">Created</th>
                   <th className="p-3 text-right">Action</th>
                 </tr>
               </thead>
+
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id} className="border-t border-slate-200">
-                    <td className="p-3 font-semibold">{r.role}</td>
-                    <td className="p-3 font-semibold">{r.full_name}</td>
-                    <td className="p-3 text-slate-700">{r.email}</td>
-                    <td className="p-3">
-                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-extrabold ${pillClass(r.review_status)}`}>
-                        {r.review_status}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      {r.role === "vendor" ? (r.vendor_queue_override ?? "—") : "—"}
-                    </td>
-                    <td className="p-3">{r.role === "vendor" ? r.vendor_priority_score : "—"}</td>
-                    <td className="p-3 text-slate-600">
-                      {new Date(r.created_at).toLocaleString()}
-                    </td>
-                    <td className="p-3 text-right">
-                      <button
-                        onClick={() => openRow(r)}
-                        className="rounded-xl bg-[#fcb040] px-4 py-2 font-extrabold text-slate-900 transition hover:opacity-95"
-                      >
-                        Review
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {rows.map((r) => {
+                  const points = r.referral_points ?? 0;
+                  const count = r.referrals_count ?? 0;
+
+                  return (
+                    <tr key={r.id} className="border-t border-slate-200">
+                      <td className="p-3 font-semibold">{r.role}</td>
+                      <td className="p-3 font-semibold">{r.full_name}</td>
+                      <td className="p-3 text-slate-700">{r.email}</td>
+                      <td className="p-3">
+                        <span
+                          className={`inline-flex rounded-full px-3 py-1 text-xs font-extrabold ${pillClass(
+                            r.review_status
+                          )}`}
+                        >
+                          {r.review_status}
+                        </span>
+                      </td>
+                      <td className="p-3">{r.role === "vendor" ? r.vendor_queue_override ?? "—" : "—"}</td>
+
+                      {/* Score: vendors show vendor_priority_score; consumers show referral_points */}
+                      <td className="p-3 font-semibold">
+                        {r.role === "vendor" ? r.vendor_priority_score : points}
+                      </td>
+
+                      {/* Referrals: only meaningful for consumers */}
+                      <td className="p-3 text-slate-700">
+                        {r.role === "consumer" ? (
+                          <span className="inline-flex items-center gap-2">
+                            <span className="font-semibold">{count}</span>
+                            <span className="text-xs text-slate-500">(signups)</span>
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+
+                      <td className="p-3 text-slate-600">{new Date(r.created_at).toLocaleString()}</td>
+                      <td className="p-3 text-right">
+                        <button
+                          onClick={() => openRow(r)}
+                          className="rounded-xl bg-[#fcb040] px-4 py-2 font-extrabold text-slate-900 transition hover:opacity-95"
+                        >
+                          Review
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
 
                 {!loading && rows.length === 0 ? (
                   <tr>
-                    <td className="p-6 text-slate-500" colSpan={8}>
+                    <td className="p-6 text-slate-500" colSpan={9}>
                       No rows found.
                     </td>
                   </tr>
@@ -525,10 +555,7 @@ export default function AdminPage() {
             <div className="text-xs text-slate-500">
               {total === 0
                 ? "—"
-                : `Showing ${Math.min(total, offset + 1)}–${Math.min(
-                    total,
-                    offset + rows.length
-                  )} of ${total}`}
+                : `Showing ${Math.min(total, offset + 1)}–${Math.min(total, offset + rows.length)} of ${total}`}
             </div>
             <div className="flex gap-2">
               <button
@@ -572,6 +599,25 @@ export default function AdminPage() {
                   Close
                 </button>
               </div>
+
+              {/* Referral summary (consumers) */}
+              {selected.role === "consumer" ? (
+                <div className="mt-5 grid gap-2 rounded-3xl border border-[#fcb040] bg-white p-4">
+                  <div className="text-sm font-extrabold">Referrals</div>
+                  <div className="text-sm text-slate-700">
+                    <span className="font-semibold">Points:</span>{" "}
+                    {selected.referral_points ?? 0}{" "}
+                    <span className="text-slate-500">•</span>{" "}
+                    <span className="font-semibold">Signups:</span>{" "}
+                    {selected.referrals_count ?? 0}
+                  </div>
+                  {selected.referral_code ? (
+                    <div className="text-xs text-slate-500">
+                      Referral code: <span className="font-mono">{selected.referral_code}</span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               {/* Quick actions */}
               <div className="mt-5 grid gap-3 rounded-3xl border border-[#fcb040] bg-white p-4">

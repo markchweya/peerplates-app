@@ -48,7 +48,15 @@ const BRAND = "#fcb040";
 export default function JoinForm({ role, title, subtitle, questions }: Props) {
   const router = useRouter();
   const sp = useSearchParams();
-  const ref = (sp.get("ref") || "").trim();
+
+  // Referral can come from URL (?ref=XXXX) OR user can paste a code.
+  const refFromUrl = (sp.get("ref") || "").trim();
+  const [refCode, setRefCode] = useState(refFromUrl);
+
+  useEffect(() => {
+    // keep in sync when URL changes
+    setRefCode(refFromUrl);
+  }, [refFromUrl]);
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -106,6 +114,11 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
     if (!fullName.trim()) return "Please enter your full name.";
     if (!email.trim()) return "Please enter your email.";
 
+    // referral code optional; if provided, keep it sane
+    if (refCode.trim() && refCode.trim().length < 4) {
+      return "Referral code looks too short.";
+    }
+
     for (const q of questions) {
       if (!q.required) continue;
 
@@ -143,7 +156,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
         fullName: fullName.trim(),
         email: email.trim(),
         phone: phone.trim() || null,
-        ref: ref || null,
+        ref: refCode.trim() || null,
         answers,
       };
 
@@ -176,7 +189,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `Signup failed (${res.status})`);
 
-      // ✅ THIS is where it goes (right here, after success, before pushing)
+      // after success, send to thanks with id + referral_code
       const qp = new URLSearchParams();
       qp.set("role", role);
       if (data?.id) qp.set("id", data.id);
@@ -226,12 +239,27 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
           </h1>
           <p className="mt-2 text-slate-900/70 text-sm sm:text-base">{subtitle}</p>
 
-          {ref ? (
+          {/* Referral area */}
+          {refFromUrl ? (
             <div className="mt-4 rounded-2xl border border-[#fcb040] bg-white p-4 text-sm">
               <span className="font-semibold">Referral detected:</span>{" "}
-              <span className="font-mono">{ref}</span>
+              <span className="font-mono">{refFromUrl}</span>
             </div>
-          ) : null}
+          ) : (
+            <div className="mt-4 grid gap-2">
+              <label className="text-sm font-semibold">Referral code (optional)</label>
+              <input
+                value={refCode}
+                onChange={(e) => setRefCode(e.target.value)}
+                className={inputBase}
+                placeholder="Paste a code like QF6SMP6T"
+                autoComplete="off"
+              />
+              <div className="text-xs text-slate-900/60">
+                If a friend shared a code, paste it here (or open their link).
+              </div>
+            </div>
+          )}
 
           <form onSubmit={onSubmit} className="mt-6 grid gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -318,16 +346,22 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
                               <span
                                 className={[
                                   "inline-flex h-6 w-6 items-center justify-center rounded-full border",
-                                  checked ? "border-slate-900 bg-white" : "border-[#fcb040] bg-white",
+                                  checked
+                                    ? "border-slate-900 bg-white"
+                                    : "border-[#fcb040] bg-white",
                                 ].join(" ")}
                                 aria-hidden="true"
                               >
-                                {checked ? <span className="h-2.5 w-2.5 rounded-full bg-slate-900" /> : null}
+                                {checked ? (
+                                  <span className="h-2.5 w-2.5 rounded-full bg-slate-900" />
+                                ) : null}
                               </span>
                             </button>
                           );
                         })}
-                        <div className="text-xs text-slate-900/60">You can select multiple options.</div>
+                        <div className="text-xs text-slate-900/60">
+                          You can select multiple options.
+                        </div>
                       </div>
                     </div>
                   );
@@ -353,10 +387,13 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
                             setFiles((prev) => ({ ...prev, [uploadKey]: f }));
                           }}
                         />
-                        {q.helpText ? <div className="text-xs text-slate-900/60">{q.helpText}</div> : null}
+                        {q.helpText ? (
+                          <div className="text-xs text-slate-900/60">{q.helpText}</div>
+                        ) : null}
                         {files[uploadKey] ? (
                           <div className="text-xs font-semibold">
-                            Selected: <span className="font-mono">{files[uploadKey]!.name}</span>
+                            Selected:{" "}
+                            <span className="font-mono">{files[uploadKey]!.name}</span>
                           </div>
                         ) : null}
                       </div>

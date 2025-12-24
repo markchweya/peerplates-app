@@ -23,10 +23,9 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing id" }, { status: 400 });
     }
 
-    // ✅ Only select columns that exist
     const { data: entry, error: entryErr } = await sb
       .from("waitlist_entries")
-      .select("id, role, created_at")
+      .select("id, role")
       .eq("id", id)
       .single();
 
@@ -34,34 +33,34 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // ✅ Option A: Vendors do NOT get a queue position in MVP
+    // ✅ Option A: vendors do NOT get a queue position
     if (entry.role === "vendor") {
-      return NextResponse.json({
-        id: entry.id,
-        role: entry.role,
-        position: null,
-      });
+      return NextResponse.json({ id: entry.id, role: entry.role, position: null });
     }
 
-    // ✅ Consumers: MVP ordering by created_at
-    // (In TJ-005 this will change to points/referrals ranking)
-    const { count, error: countErr } = await sb
+    // ✅ Consumers: rank by referral_points DESC, then created_at ASC
+    const { data: consumers, error: cErr } = await sb
       .from("waitlist_entries")
-      .select("id", { count: "exact", head: true })
-      .eq("role", "consumer")
-      .lte("created_at", entry.created_at);
+      .select("id, referral_points, created_at")
+      .eq("role", "consumer");
 
-    if (countErr) {
-      return NextResponse.json(
-        { error: countErr.message || "Count failed" },
-        { status: 500 }
-      );
+    if (cErr) {
+      return NextResponse.json({ error: cErr.message }, { status: 500 });
     }
+
+    const list = (consumers || []).slice().sort((a: any, b: any) => {
+      const ap = Number(a.referral_points ?? 0);
+      const bp = Number(b.referral_points ?? 0);
+      if (ap !== bp) return bp - ap; // higher points first
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); // earlier first
+    });
+
+    const idx = list.findIndex((x: any) => x.id === id);
 
     return NextResponse.json({
-      id: entry.id,
-      role: entry.role,
-      position: count ?? null,
+      id,
+      role: "consumer",
+      position: idx >= 0 ? idx + 1 : null,
     });
   } catch (e: any) {
     return NextResponse.json(

@@ -1,122 +1,61 @@
 -- supabase/schema.sql
--- PeerPlates (Waitlist + TJ-004 Admin Review + Manual Vendor Queue Override)
--- FULL SCHEMA (idempotent / safe to run multiple times)
+-- PeerPlates: waitlist + admin review (TJ-004) + referrals (TJ-005) + manual vendor queue override
+-- Safe to run multiple times (idempotent)
 
--- ------------------------------------------------------------
--- Extensions
--- ------------------------------------------------------------
+-- Needed for gen_random_uuid()
 create extension if not exists pgcrypto;
 
--- ------------------------------------------------------------
--- Table: waitlist_entries
--- ------------------------------------------------------------
 create table if not exists public.waitlist_entries (
   id uuid primary key default gen_random_uuid(),
 
-  -- Core identity
-  role text not null,
+  role text not null check (role in ('consumer','vendor')),
   full_name text not null,
   email text not null,
   phone text,
 
-  -- Consumer extras
   is_student boolean,
   university text,
 
-  -- Dynamic questionnaire answers
   answers jsonb not null default '{}'::jsonb,
 
-  -- Referrals
+  -- Referral identity
   referral_code text unique,
   referred_by text,
 
-  -- Vendor scoring
+  -- Vendor-only score
   vendor_priority_score int not null default 0,
   certificate_url text,
 
-  -- TJ-004: Admin review fields
+  -- TJ-005: Consumer referral movement
+  referral_points int not null default 0,
+  referrals_count int not null default 0,
+
+  -- TJ-004: Admin review
   review_status text not null default 'pending',
   admin_notes text,
   reviewed_at timestamptz,
   reviewed_by text,
 
-  -- TJ-004: Manual vendor queue override (lower number = earlier)
+  -- TJ-004: Manual vendor ordering (lower = earlier)
   vendor_queue_override integer,
 
-  -- Timestamps
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
--- ------------------------------------------------------------
--- Ensure columns exist (safe upgrades for existing deployments)
--- ------------------------------------------------------------
-alter table public.waitlist_entries add column if not exists role text;
-alter table public.waitlist_entries add column if not exists full_name text;
-alter table public.waitlist_entries add column if not exists email text;
-alter table public.waitlist_entries add column if not exists phone text;
+-- Add missing columns if the table already existed (idempotent)
+alter table public.waitlist_entries add column if not exists referral_points int not null default 0;
+alter table public.waitlist_entries add column if not exists referrals_count int not null default 0;
 
-alter table public.waitlist_entries add column if not exists is_student boolean;
-alter table public.waitlist_entries add column if not exists university text;
-
-alter table public.waitlist_entries add column if not exists answers jsonb;
-alter table public.waitlist_entries add column if not exists referral_code text;
-alter table public.waitlist_entries add column if not exists referred_by text;
-
-alter table public.waitlist_entries add column if not exists vendor_priority_score int;
-alter table public.waitlist_entries add column if not exists certificate_url text;
-
-alter table public.waitlist_entries add column if not exists review_status text;
+alter table public.waitlist_entries add column if not exists review_status text not null default 'pending';
 alter table public.waitlist_entries add column if not exists admin_notes text;
 alter table public.waitlist_entries add column if not exists reviewed_at timestamptz;
 alter table public.waitlist_entries add column if not exists reviewed_by text;
 
 alter table public.waitlist_entries add column if not exists vendor_queue_override integer;
+alter table public.waitlist_entries add column if not exists updated_at timestamptz not null default now();
 
-alter table public.waitlist_entries add column if not exists created_at timestamptz;
-alter table public.waitlist_entries add column if not exists updated_at timestamptz;
-
--- ------------------------------------------------------------
--- Defaults (safe to re-run)
--- ------------------------------------------------------------
-alter table public.waitlist_entries
-  alter column answers set default '{}'::jsonb;
-
-alter table public.waitlist_entries
-  alter column vendor_priority_score set default 0;
-
-alter table public.waitlist_entries
-  alter column review_status set default 'pending';
-
-alter table public.waitlist_entries
-  alter column created_at set default now();
-
-alter table public.waitlist_entries
-  alter column updated_at set default now();
-
--- ------------------------------------------------------------
--- Constraints (idempotent)
--- ------------------------------------------------------------
-
--- role enum constraint
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint c
-    join pg_class t on t.oid = c.conrelid
-    join pg_namespace n on n.oid = t.relnamespace
-    where n.nspname = 'public'
-      and t.relname = 'waitlist_entries'
-      and c.conname = 'waitlist_entries_role_chk'
-  ) then
-    alter table public.waitlist_entries
-      add constraint waitlist_entries_role_chk
-      check (role in ('consumer','vendor'));
-  end if;
-end $$;
-
--- review_status enum constraint
+-- Ensure review_status check constraint exists
 do $$
 begin
   if not exists (
@@ -134,14 +73,11 @@ begin
   end if;
 end $$;
 
--- ------------------------------------------------------------
--- Uniqueness + indexes
--- ------------------------------------------------------------
-
--- Prevent duplicate signups per role/email (same email can be both vendor and consumer)
+-- Prevent duplicate signups per role/email (same email can join as consumer + vendor)
 create unique index if not exists waitlist_entries_role_email_ux
   on public.waitlist_entries (role, lower(email));
 
+-- Helpful indexes
 create index if not exists waitlist_entries_role_idx
   on public.waitlist_entries(role);
 
@@ -157,22 +93,20 @@ create index if not exists waitlist_entries_vendor_score_idx
 create index if not exists waitlist_entries_vendor_queue_override_idx
   on public.waitlist_entries(vendor_queue_override);
 
--- Helpful composite for vendor sorting
-create index if not exists waitlist_entries_vendor_sorting_idx
-  on public.waitlist_entries(role, vendor_queue_override, vendor_priority_score, created_at);
+create index if not exists waitlist_entries_referral_code_idx
+  on public.waitlist_entries(referral_code);
 
--- ------------------------------------------------------------
--- updated_at trigger
--- ------------------------------------------------------------
+create index if not exists waitlist_entries_consumer_sort_idx
+  on public.waitlist_entries(role, referral_points, created_at);
+
+-- Auto-update updated_at
 create or replace function public.set_updated_at()
-returns trigger
-language plpgsql
-as $$
+returns trigger as $$
 begin
   new.updated_at = now();
   return new;
 end;
-$$;
+$$ language plpgsql;
 
 drop trigger if exists trg_waitlist_set_updated_at on public.waitlist_entries;
 
@@ -180,7 +114,36 @@ create trigger trg_waitlist_set_updated_at
 before update on public.waitlist_entries
 for each row execute function public.set_updated_at();
 
--- ------------------------------------------------------------
--- PostgREST schema reload (helps after ALTER TABLE)
--- ------------------------------------------------------------
+-- Atomic referral increment for consumer referrers (TJ-005)
+create or replace function public.increment_consumer_referrals(p_referral_code text)
+returns uuid
+language plpgsql
+as $$
+declare
+  ref_id uuid;
+  ref_role text;
+begin
+  select id, role
+    into ref_id, ref_role
+  from public.waitlist_entries
+  where referral_code = p_referral_code
+  limit 1;
+
+  if ref_id is null then
+    return null;
+  end if;
+
+  -- Only consumers get points that move the queue
+  if ref_role = 'consumer' then
+    update public.waitlist_entries
+    set referral_points = coalesce(referral_points, 0) + 1,
+        referrals_count = coalesce(referrals_count, 0) + 1
+    where id = ref_id;
+  end if;
+
+  return ref_id;
+end;
+$$;
+
+-- Force PostgREST to refresh schema
 notify pgrst, 'reload schema';
