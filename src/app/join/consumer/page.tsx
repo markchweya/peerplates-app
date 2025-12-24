@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import JoinForm from "@/components/JoinForm";
 import { consumerQuestions } from "@/config/questions.consumer";
 
@@ -7,11 +8,13 @@ export const metadata = {
 
 export default function ConsumerJoinPage() {
   return (
-    <JoinForm
-      role="consumer"
-      title="Join the Consumer waitlist"
-      subtitle="Move up the queue by referring friends. Get early access first."
-      questions={consumerQuestions}
-    />
+    <Suspense fallback={<div className="min-h-screen bg-white" />}>
+      <JoinForm
+        role="consumer"
+        title="Join the Consumer waitlist"
+        subtitle="Move up the queue by referring friends. Get early access first."
+        questions={consumerQuestions}
+      />
+    </Suspense>
   );
 }

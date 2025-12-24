@@ -1,34 +1,29 @@
-"use client";
-
-import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+// src/app/join/page.tsx
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { MotionDiv } from "../ui/motion";
 
 type Role = "consumer" | "vendor";
 
-export default function JoinPage() {
-  const router = useRouter();
-  const sp = useSearchParams();
+export const metadata = {
+  title: "Join Waitlist | PeerPlates",
+};
 
-  const roleFromUrl = (sp.get("role") || "").toLowerCase() as Role | "";
+export default function JoinPage({
+  searchParams,
+}: {
+  searchParams?: { role?: string };
+}) {
+  const roleParam = String(searchParams?.role || "").toLowerCase();
 
-  // If role exists in URL, skip this page entirely (no repetition)
-  useEffect(() => {
-    if (roleFromUrl === "consumer") router.replace("/join/consumer");
-    if (roleFromUrl === "vendor") router.replace("/join/vendor");
-  }, [roleFromUrl, router]);
-
-  const defaultRole: Role = useMemo(() => {
-    return roleFromUrl === "vendor" ? "vendor" : "consumer";
-  }, [roleFromUrl]);
-
-  const [role, setRole] = useState<Role>(defaultRole);
+  // If a role is provided in the URL, redirect immediately on the server
+  if (roleParam === "consumer" || roleParam === "vendor") {
+    redirect(`/join/${roleParam as Role}`);
+  }
 
   const cardBase =
     "w-full rounded-2xl border p-5 text-left transition will-change-transform";
-  const selected = "border-[#fcb040] bg-[#fff7ed] shadow-sm";
-  const unselected =
+  const hover =
     "border-slate-200 hover:bg-slate-50 hover:-translate-y-[2px]";
 
   return (
@@ -45,9 +40,7 @@ export default function JoinPage() {
             <div className="text-lg font-semibold tracking-tight">PeerPlates</div>
           </Link>
 
-          <div className="text-sm text-slate-500 whitespace-nowrap">
-            Join waitlist
-          </div>
+          <div className="text-sm text-slate-500 whitespace-nowrap">Join waitlist</div>
         </MotionDiv>
 
         <MotionDiv
@@ -65,51 +58,22 @@ export default function JoinPage() {
           </p>
 
           <div className="mt-7 grid gap-4 sm:grid-cols-2">
-            <MotionDiv
-              whileHover={{ scale: role === "consumer" ? 1.01 : 1.02 }}
-              whileTap={{ scale: 0.99 }}
-            >
-              <button
-                type="button"
-                onClick={() => setRole("consumer")}
-                className={`${cardBase} ${
-                  role === "consumer" ? selected : unselected
-                }`}
-              >
-                <div className="text-lg sm:text-xl font-extrabold">Consumer</div>
-                <div className="mt-1 text-sm font-semibold text-slate-600">
-                  Buy food • Refer friends • Move up the queue
-                </div>
-              </button>
-            </MotionDiv>
+            <Link href="/join/consumer" className={`${cardBase} ${hover}`}>
+              <div className="text-lg sm:text-xl font-extrabold">Consumer</div>
+              <div className="mt-1 text-sm font-semibold text-slate-600">
+                Buy food • Refer friends • Move up the queue
+              </div>
+            </Link>
 
-            <MotionDiv
-              whileHover={{ scale: role === "vendor" ? 1.01 : 1.02 }}
-              whileTap={{ scale: 0.99 }}
-            >
-              <button
-                type="button"
-                onClick={() => setRole("vendor")}
-                className={`${cardBase} ${
-                  role === "vendor" ? selected : unselected
-                }`}
-              >
-                <div className="text-lg sm:text-xl font-extrabold">Vendor</div>
-                <div className="mt-1 text-sm font-semibold text-slate-600">
-                  Sell food • Questionnaire review • Manual queue position
-                </div>
-              </button>
-            </MotionDiv>
+            <Link href="/join/vendor" className={`${cardBase} ${hover}`}>
+              <div className="text-lg sm:text-xl font-extrabold">Vendor</div>
+              <div className="mt-1 text-sm font-semibold text-slate-600">
+                Sell food • Questionnaire review • Manual queue position
+              </div>
+            </Link>
           </div>
 
           <div className="mt-8 flex flex-col sm:flex-row gap-3">
-            <Link
-              href={`/join/${role}`}
-              className="rounded-2xl bg-[#fcb040] px-6 py-3 text-center font-extrabold text-slate-900 transition hover:opacity-95 hover:-translate-y-[1px]"
-            >
-              Continue
-            </Link>
-
             <Link
               href="/"
               className="rounded-2xl border border-slate-200 px-6 py-3 text-center font-extrabold transition hover:bg-slate-50 hover:-translate-y-[1px]"
