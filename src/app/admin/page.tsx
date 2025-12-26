@@ -33,13 +33,12 @@ type Entry = {
   certificate_url: string | null;
   certificate_signed_url?: string | null;
 
-  // ✅ clean review columns (NEW)
+  // clean review columns
   city?: string | null;
-  neighborhood?: string | null;
-  cuisines?: string[] | null;
   instagram_handle?: string | null;
   bus_minutes?: number | null;
   compliance_readiness?: string[] | null;
+  top_cuisines?: string[] | null;
 
   created_at: string;
 
@@ -48,7 +47,6 @@ type Entry = {
   reviewed_at: string | null;
   reviewed_by: string | null;
 
-  // from API convenience field
   score?: number;
 };
 
@@ -67,14 +65,6 @@ function safeStr(v: any) {
   return String(v);
 }
 
-function toBool(v: string): boolean | null {
-  const s = v.trim().toLowerCase();
-  if (!s) return null;
-  if (["true", "1", "yes", "on"].includes(s)) return true;
-  if (["false", "0", "no", "off"].includes(s)) return false;
-  return null;
-}
-
 function joinArr(v: any): string {
   if (!v) return "";
   if (Array.isArray(v)) return v.filter(Boolean).join(", ");
@@ -91,7 +81,7 @@ export default function AdminPage() {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [q, setQ] = useState("");
 
-  // ✅ New review filters
+  // Review filters
   const [city, setCity] = useState("");
   const [maxBusMinutes, setMaxBusMinutes] = useState("");
   const [hasInstagram, setHasInstagram] = useState<"" | "true" | "false">("");
@@ -133,7 +123,6 @@ export default function AdminPage() {
     if (mbm) sp.set("max_bus_minutes", mbm);
 
     if (hasInstagram) sp.set("has_instagram", hasInstagram);
-
     if (compliance.trim()) sp.set("compliance", compliance.trim());
 
     sp.set("limit", String(limit));
@@ -270,7 +259,7 @@ export default function AdminPage() {
     }
   };
 
-  // ✅ Use server export (clean columns) instead of client-side CSV
+  // Server export endpoint (you already reference /api/admin/export)
   const exportCsv = async () => {
     setErr("");
     try {
@@ -383,7 +372,6 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-white text-slate-900">
       <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
-        {/* Top bar */}
         <MotionDiv
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -411,7 +399,6 @@ export default function AdminPage() {
           </div>
         </MotionDiv>
 
-        {/* Controls + table */}
         <MotionDiv
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
@@ -424,7 +411,6 @@ export default function AdminPage() {
               <div className="text-sm text-slate-600 mt-1">{loading ? "Loading…" : `${total} total`}</div>
             </div>
 
-            {/* Filters */}
             <div className="grid gap-3 sm:grid-cols-3 md:grid-cols-6 w-full md:max-w-6xl">
               <div className="grid gap-1">
                 <label className="text-xs font-semibold text-slate-600">Role</label>
@@ -627,15 +613,11 @@ export default function AdminPage() {
             </table>
           </div>
 
-          {/* Pagination */}
           <div className="mt-4 flex items-center justify-between">
             <div className="text-xs text-slate-500">
               {total === 0
                 ? "—"
-                : `Showing ${Math.min(total, offset + 1)}–${Math.min(
-                    total,
-                    offset + rows.length
-                  )} of ${total}`}
+                : `Showing ${Math.min(total, offset + 1)}–${Math.min(total, offset + rows.length)} of ${total}`}
             </div>
             <div className="flex gap-2">
               <button
@@ -657,7 +639,6 @@ export default function AdminPage() {
         </MotionDiv>
       </div>
 
-      {/* Drawer */}
       {selected ? (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/30" onClick={closeDrawer} />
@@ -680,7 +661,6 @@ export default function AdminPage() {
                 </button>
               </div>
 
-              {/* Vendor quick summary from clean columns */}
               {selected.role === "vendor" ? (
                 <div className="mt-5 grid gap-2 rounded-3xl border border-[#fcb040] bg-white p-4">
                   <div className="text-sm font-extrabold">Vendor summary</div>
@@ -688,24 +668,22 @@ export default function AdminPage() {
                     <span className="font-semibold">City:</span> {safeStr(selected.city) || "—"}{" "}
                     <span className="text-slate-500">•</span>{" "}
                     <span className="font-semibold">Bus:</span>{" "}
-                    {typeof selected.bus_minutes === "number" ? `${selected.bus_minutes} min` : "—"}
+                    {typeof selected.bus_minutes === "number" ? `${selected.bus_minutes} min` : "—"}{" "}
                     <span className="text-slate-500">•</span>{" "}
                     <span className="font-semibold">IG:</span>{" "}
                     {safeStr(selected.instagram_handle).trim() ? safeStr(selected.instagram_handle) : "—"}
                   </div>
 
                   <div className="text-sm text-slate-700">
-                    <span className="font-semibold">Cuisines:</span> {joinArr(selected.cuisines) || "—"}
+                    <span className="font-semibold">Top cuisines:</span> {joinArr(selected.top_cuisines) || "—"}
                   </div>
 
                   <div className="text-sm text-slate-700">
-                    <span className="font-semibold">Compliance:</span>{" "}
-                    {joinArr(selected.compliance_readiness) || "—"}
+                    <span className="font-semibold">Compliance:</span> {joinArr(selected.compliance_readiness) || "—"}
                   </div>
                 </div>
               ) : null}
 
-              {/* Referral summary (consumers) */}
               {selected.role === "consumer" ? (
                 <div className="mt-5 grid gap-2 rounded-3xl border border-[#fcb040] bg-white p-4">
                   <div className="text-sm font-extrabold">Referrals</div>
@@ -722,7 +700,6 @@ export default function AdminPage() {
                 </div>
               ) : null}
 
-              {/* Quick actions */}
               <div className="mt-5 grid gap-3 rounded-3xl border border-[#fcb040] bg-white p-4">
                 <div className="text-sm font-extrabold">Quick actions</div>
                 <div className="flex flex-wrap gap-2">
@@ -747,7 +724,6 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              {/* Manual vendor queue override */}
               {selected.role === "vendor" ? (
                 <div className="mt-5 grid gap-2 rounded-3xl border border-[#fcb040] bg-white p-4">
                   <div className="text-sm font-extrabold">Manual vendor queue override</div>
@@ -781,7 +757,6 @@ export default function AdminPage() {
                 </div>
               ) : null}
 
-              {/* Status + notes */}
               <div className="mt-5 grid gap-3">
                 <div className="grid gap-1">
                   <label className="text-xs font-semibold text-slate-600">Status</label>
@@ -813,17 +788,6 @@ export default function AdminPage() {
                 >
                   Save status + notes
                 </button>
-
-                {selected.role === "vendor" && selected.certificate_signed_url ? (
-                  <a
-                    href={selected.certificate_signed_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-2xl border border-slate-200 bg-white px-6 py-3 text-center font-extrabold hover:bg-slate-50 transition"
-                  >
-                    View certificate
-                  </a>
-                ) : null}
 
                 <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                   <div className="text-sm font-extrabold">Answers</div>

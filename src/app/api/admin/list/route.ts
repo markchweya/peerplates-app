@@ -16,10 +16,9 @@ function supabaseAdmin() {
 }
 
 function isAuthorized(req: Request) {
-  // If you didn't set ADMIN_SECRET, allow access (dev-friendly).
-  // In production, you SHOULD set ADMIN_SECRET so this becomes enforced.
+  // Dev-friendly: if ADMIN_SECRET is not set, allow access.
+  // In prod, set ADMIN_SECRET to enforce.
   if (!ADMIN_SECRET) return true;
-
   const header = (req.headers.get("x-admin-secret") || "").trim();
   return header === ADMIN_SECRET;
 }
@@ -48,7 +47,7 @@ export async function GET(req: Request) {
     const status = (searchParams.get("status") || "all").toLowerCase();
     const q = (searchParams.get("q") || "").trim();
 
-    // ✅ New optional “review” filters (from clean columns)
+    // Optional “review” filters (from clean columns)
     const city = (searchParams.get("city") || "").trim();
     const maxBusMinutesRaw = (searchParams.get("max_bus_minutes") || "").trim();
     const maxBusMinutes = maxBusMinutesRaw ? Number(maxBusMinutesRaw) : null;
@@ -87,13 +86,12 @@ export async function GET(req: Request) {
           "reviewed_at",
           "reviewed_by",
 
-          // ✅ review-friendly columns (NEW)
+          // clean review-friendly columns (that exist)
           "city",
-          "neighborhood",
-          "cuisines",
           "instagram_handle",
           "bus_minutes",
           "compliance_readiness",
+          "top_cuisines",
 
           // timestamps
           "created_at",
@@ -117,15 +115,17 @@ export async function GET(req: Request) {
       query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%`);
     }
 
-    // ✅ New filters based on clean columns
+    // City filter
     if (city) {
       query = query.ilike("city", `%${city}%`);
     }
 
+    // Max bus minutes filter
     if (typeof maxBusMinutes === "number" && Number.isFinite(maxBusMinutes)) {
       query = query.lte("bus_minutes", maxBusMinutes);
     }
 
+    // Has instagram filter
     if (hasInstagram === true) {
       query = query.not("instagram_handle", "is", null).neq("instagram_handle", "");
     } else if (hasInstagram === false) {
@@ -133,15 +133,12 @@ export async function GET(req: Request) {
       query = query.or("instagram_handle.is.null,instagram_handle.eq.");
     }
 
+    // Compliance filter (array contains value)
     if (compliance) {
-      // checks array contains a string
       query = query.contains("compliance_readiness", [compliance]);
     }
 
-    // Sorting:
-    // - vendors: override asc (nulls last) then vendor_priority_score desc then created_at asc
-    // - consumers: referral_points desc then created_at asc
-    // - all: newest first
+    // Sorting
     if (role === "vendor") {
       query = query
         .order("vendor_queue_override", { ascending: true, nullsFirst: false })
@@ -163,11 +160,9 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Convenience "score" field:
-    // - vendor score = vendor_priority_score
-    // - consumer score = referral_points
     const rows = (data || []).map((r: any) => ({
       ...r,
+      // convenience score
       score: r.role === "vendor" ? r.vendor_priority_score ?? 0 : r.referral_points ?? 0,
     }));
 
