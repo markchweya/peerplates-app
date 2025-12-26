@@ -1,9 +1,9 @@
+// src/app/queue/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { MotionDiv } from "@/app/ui/motion";
 
 const BRAND = "#fcb040";
@@ -31,7 +31,8 @@ const inputBase =
   "focus:ring-4 focus:ring-[rgba(252,176,64,0.30)]";
 
 const buttonBase =
-  "w-full rounded-2xl bg-[#fcb040] px-6 py-3 text-center font-extrabold text-black transition hover:opacity-95 hover:-translate-y-[1px] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed";
+  "w-full rounded-2xl bg-[#fcb040] px-6 py-3 text-center font-extrabold text-black transition " +
+  "hover:opacity-95 hover:-translate-y-[1px] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed";
 
 const subtleButton =
   "w-full rounded-2xl border border-black/10 bg-white px-6 py-3 text-center font-extrabold text-black hover:bg-black/5 transition";
@@ -39,16 +40,6 @@ const subtleButton =
 export default function QueuePage() {
   const sp = useSearchParams();
   const codeFromUrl = (sp.get("code") || "").trim();
-
-  const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
-
-  // ✅ Fix Vercel prerender error by only creating Supabase client after mount.
-  useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !anon) return; // show error below
-    setSupabase(createClient(url, anon));
-  }, []);
 
   const [code, setCode] = useState(codeFromUrl);
   const [loading, setLoading] = useState(false);
@@ -62,7 +53,10 @@ export default function QueuePage() {
     setResult(null);
 
     try {
-      const res = await fetch(`/api/queue-status?code=${encodeURIComponent(queueCode)}`);
+      const cleaned = queueCode.trim();
+      if (!cleaned) throw new Error("Please enter your queue code.");
+
+      const res = await fetch(`/api/queue-status?code=${encodeURIComponent(cleaned)}`);
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload?.error || "Failed to fetch queue status.");
       setResult(payload as QueueResult);
@@ -91,8 +85,6 @@ export default function QueuePage() {
     }
   };
 
-  const envMissing = !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
   return (
     <main className="min-h-screen bg-white text-black">
       <div className="mx-auto w-full max-w-xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
@@ -120,12 +112,6 @@ export default function QueuePage() {
             Paste your queue code (from email) to view your current status and position.
           </p>
 
-          {envMissing ? (
-            <div className="mt-4 rounded-2xl border border-black/10 bg-black/5 p-3 text-sm">
-              Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel env vars.
-            </div>
-          ) : null}
-
           {err ? (
             <MotionDiv
               initial={{ opacity: 0, y: 6 }}
@@ -149,11 +135,7 @@ export default function QueuePage() {
                 />
               </div>
 
-              <button
-                className={buttonBase}
-                onClick={() => fetchStatus(code.trim())}
-                disabled={loading || !code.trim() || envMissing}
-              >
+              <button className={buttonBase} onClick={() => fetchStatus(code)} disabled={loading || !code.trim()}>
                 {loading ? "Loading…" : "View status"}
               </button>
 
@@ -184,11 +166,17 @@ export default function QueuePage() {
 
                   <div>
                     <span className="font-semibold">Queue position:</span>{" "}
-                    {result.position ? <span className="font-extrabold">#{result.position}</span> : <span className="text-black/60">Not available</span>}
+                    {result.position ? (
+                      <span className="font-extrabold">#{result.position}</span>
+                    ) : (
+                      <span className="text-black/60">Not available</span>
+                    )}
                   </div>
 
                   <div>
-                    <span className="font-semibold">{result.role === "consumer" ? "Referral points" : "Vendor score"}:</span>{" "}
+                    <span className="font-semibold">
+                      {result.role === "consumer" ? "Referral points" : "Vendor score"}:
+                    </span>{" "}
                     <span className="font-extrabold">{result.score}</span>
                   </div>
 
@@ -217,17 +205,24 @@ export default function QueuePage() {
                       </button>
                     </div>
                     <div className="text-xs text-black/50">
-                      This goes to <span className="font-semibold">/join</span> so they choose Vendor or Consumer first.
+                      This link goes to <span className="font-semibold">/join</span> so they choose Vendor or Consumer first.
                     </div>
                   </div>
                 </MotionDiv>
               ) : null}
 
               <div className="grid gap-2 sm:grid-cols-2">
-                <button className={buttonBase} onClick={() => fetchStatus(code.trim())} disabled={loading}>
+                <button className={buttonBase} onClick={() => fetchStatus(code)} disabled={loading}>
                   {loading ? "Refreshing…" : "Refresh"}
                 </button>
-                <button className={subtleButton} onClick={() => { setResult(null); setErr(""); }} disabled={loading}>
+                <button
+                  className={subtleButton}
+                  onClick={() => {
+                    setResult(null);
+                    setErr("");
+                  }}
+                  disabled={loading}
+                >
                   Check another code
                 </button>
               </div>
