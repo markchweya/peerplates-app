@@ -38,6 +38,9 @@ create table if not exists public.waitlist_entries (
   reviewed_at timestamptz,
   reviewed_by text,
 
+  -- ✅ Queue lookup (public code users can paste)
+  queue_code text unique,
+
   -- Consent
   accepted_privacy boolean not null default false,
   consented_at timestamptz,
@@ -58,7 +61,7 @@ create table if not exists public.waitlist_entries (
   updated_at timestamptz not null default now()
 );
 
--- 3) Ensure columns exist even if table already existed (THIS is what fixes your error)
+-- 3) Ensure columns exist even if table already existed
 alter table public.waitlist_entries
   -- consent (safe)
   add column if not exists accepted_marketing boolean not null default false,
@@ -73,16 +76,20 @@ alter table public.waitlist_entries
   add column if not exists signup_source text,
   add column if not exists user_agent text,
 
-  -- extracted “no more CSV cleaning” columns (missing right now in your table)
+  -- extracted columns (safe)
   add column if not exists compliance_readiness text[] not null default '{}'::text[],
   add column if not exists instagram_handle text,
   add column if not exists bus_minutes integer,
+
+  -- NOTE: city exists in your current schema; leaving it harmless even if unused
   add column if not exists city text,
 
-  -- optional consumer convenience columns
   add column if not exists top_cuisines text[] not null default '{}'::text[],
   add column if not exists delivery_area text,
-  add column if not exists dietary_preferences text[] not null default '{}'::text[];
+  add column if not exists dietary_preferences text[] not null default '{}'::text[],
+
+  -- ✅ queue_code
+  add column if not exists queue_code text;
 
 -- 4) Indexes
 create index if not exists waitlist_entries_role_created_at_idx
@@ -93,6 +100,9 @@ create index if not exists waitlist_entries_review_status_idx
 
 create index if not exists waitlist_entries_referral_code_idx
   on public.waitlist_entries (referral_code);
+
+create index if not exists waitlist_entries_queue_code_idx
+  on public.waitlist_entries (queue_code);
 
 create index if not exists waitlist_entries_city_idx
   on public.waitlist_entries (city);
@@ -135,7 +145,7 @@ declare
 begin
   v := coalesce(new.answers, '{}'::jsonb);
 
-  -- City (tries multiple keys)
+  -- City (tries multiple keys) - optional
   new.city :=
     nullif(
       trim(

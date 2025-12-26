@@ -1,9 +1,15 @@
+// src/app/api/signup/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { vendorPriorityScoreFromAnswers } from "../../../lib/vendorPriorityScore";
+import { vendorPriorityScoreFromAnswers } from "@/lib/vendorPriorityScore";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+// Used to craft the redirect link inside the Supabase auth email
+// Example: https://peerplates.com
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
 type Role = "consumer" | "vendor";
 
@@ -15,8 +21,19 @@ function supabaseAdmin() {
       "Missing Supabase env vars. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local"
     );
   }
-
   return createClient(SUPABASE_URL, SERVICE_KEY, {
+    auth: { persistSession: false },
+  });
+}
+
+// This client is ONLY for sending Supabase Auth OTP/magic-link emails (no service role).
+function supabaseAuthMailer() {
+  if (!SUPABASE_URL || !ANON_KEY) {
+    throw new Error(
+      "Missing Supabase env vars. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local"
+    );
+  }
+  return createClient(SUPABASE_URL, ANON_KEY, {
     auth: { persistSession: false },
   });
 }
@@ -25,27 +42,30 @@ function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
 
-function randomCode(len = 8) {
+function randomCode(len = 10) {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let out = "";
   for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return out;
 }
 
-async function generateUniqueReferralCode(sb: ReturnType<typeof supabaseAdmin>) {
-  for (let i = 0; i < 8; i++) {
-    const code = randomCode(8);
+async function generateUniqueCode(
+  sb: ReturnType<typeof supabaseAdmin>,
+  column: "referral_code" | "queue_code",
+  len = 10
+) {
+  for (let i = 0; i < 10; i++) {
+    const code = randomCode(len);
     const { data, error } = await sb
       .from("waitlist_entries")
       .select("id")
-      .eq("referral_code", code)
+      .eq(column, code)
       .maybeSingle();
 
     if (error) break;
     if (!data) return code;
   }
-
-  return `${randomCode(6)}${Date.now().toString().slice(-2)}`;
+  return `${randomCode(Math.max(4, len - 2))}${Date.now().toString().slice(-2)}`;
 }
 
 function normalizeStudent(v: unknown): boolean | null {
@@ -80,6 +100,33 @@ function enforceMax3Cuisines(answers: any) {
     if (Array.isArray(v) && v.length > 3) {
       throw new Error("Please select up to 3 cuisines.");
     }
+  }
+}
+
+/**
+ * ✅ Send Supabase Auth OTP / magic-link email (NOT an invite).
+ * User receives a “sign in” style email, and when they click it they land on /queue?code=...
+ * No “Accept invite” wording.
+ */
+async function sendSupabaseQueueLinkEmail(email: string, queueCode: string) {
+  try {
+    const auth = supabaseAuthMailer();
+
+    const emailRedirectTo = `${SITE_URL}/queue?code=${encodeURIComponent(queueCode)}`;
+
+    const { error } = await auth.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo,
+        // If you later add captcha, you can pass it here too
+      },
+    });
+
+    if (error) {
+      console.warn("Supabase OTP email failed:", error.message);
+    }
+  } catch (e: any) {
+    console.warn("Supabase OTP email threw:", e?.message || e);
   }
 }
 
@@ -180,11 +227,14 @@ export async function POST(req: Request) {
       }
     }
 
-    const referral_code = await generateUniqueReferralCode(sb);
+    const referral_code = await generateUniqueCode(sb, "referral_code", 8);
+    const queue_code = await generateUniqueCode(sb, "queue_code", 10);
+
     const vendor_priority_score = role === "vendor" ? vendorPriorityScoreFromAnswers(answers) : 0;
 
-    // (Optional) certificate upload remains unchanged here…
+    // Optional: certificate upload still not used here
     let certificate_url: string | null = null;
+    void certificateFile;
 
     const insertPayload: any = {
       role,
@@ -199,6 +249,7 @@ export async function POST(req: Request) {
 
       referral_code,
       referred_by,
+      queue_code,
 
       vendor_priority_score,
       certificate_url,
@@ -207,16 +258,14 @@ export async function POST(req: Request) {
       consented_at: new Date().toISOString(),
     };
 
-    // ✅ SUPPORT BOTH COLUMN NAMES:
-    // If your DB has accepted_marketing, we store there. If it has marketing_consent, store there.
-    // (The SQL below will create marketing_consent anyway, so this works either way.)
+    // Support both column names
     insertPayload["marketing_consent"] = marketing_consent;
     insertPayload["accepted_marketing"] = marketing_consent;
 
     const { data, error } = await sb
       .from("waitlist_entries")
       .insert(insertPayload)
-      .select("id, referral_code")
+      .select("id, referral_code, queue_code")
       .single();
 
     if (error) {
@@ -227,21 +276,22 @@ export async function POST(req: Request) {
       return jsonError(msg || "Database insert failed.", 500);
     }
 
-    // ✅ Award referral points (for the referrer) — do not block signup, but DO log errors
+    // Award referral points — do not block signup
     if (referrer_id) {
       const { error: rpcErr } = await sb.rpc("increment_referral_stats", {
         p_referrer_id: referrer_id,
         p_points: REFERRAL_POINTS_PER_SIGNUP,
       });
-
-      if (rpcErr) {
-        console.error("Referral award failed:", rpcErr);
-      }
+      if (rpcErr) console.error("Referral award failed:", rpcErr);
     }
+
+    // ✅ Send the “check queue” email via Supabase Auth OTP/magic link (NOT invite)
+    await sendSupabaseQueueLinkEmail(email, data.queue_code);
 
     return NextResponse.json({
       id: data.id,
       referral_code: data.referral_code,
+      queue_code: data.queue_code,
     });
   } catch (e: any) {
     return jsonError(e?.message || "Unexpected server error.", 500);
