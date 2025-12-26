@@ -4,8 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://peerplates.vercel.app";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
 type Role = "consumer" | "vendor";
 type ReviewStatus = "pending" | "reviewed" | "approved" | "rejected";
@@ -22,25 +23,37 @@ type WaitlistEntry = {
   referral_code: string | null;
 };
 
+function supabaseAnon() {
+  if (!SUPABASE_URL || !ANON_KEY) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  return createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
+}
+
 function supabaseAdmin() {
-  if (!SUPABASE_URL || !SERVICE_KEY) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+  if (!SUPABASE_URL || !SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
   return createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 }
 
-function cleanCode(v: string) {
-  return String(v || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+function getBearer(req: Request) {
+  const h = (req.headers.get("authorization") || "").trim();
+  const m = h.match(/^Bearer\s+(.+)$/i);
+  return m?.[1]?.trim() || "";
 }
 
 export async function GET(req: NextRequest) {
   try {
+    const token = getBearer(req);
+    if (!token) return NextResponse.json({ error: "Missing Authorization token" }, { status: 401 });
+
+    // 1) validate token -> email
+    const sbAnon = supabaseAnon();
+    const { data: userData, error: userErr } = await sbAnon.auth.getUser(token);
+    if (userErr || !userData?.user) return NextResponse.json({ error: "Invalid session" }, { status: 401 });
+
+    const email = String(userData.user.email || "").trim().toLowerCase();
+    if (!email) return NextResponse.json({ error: "No email on session" }, { status: 401 });
+
+    // 2) lookup entry
     const sb = supabaseAdmin();
-    const { searchParams } = new URL(req.url);
-
-    const queueCode = cleanCode(searchParams.get("code") || "");
-    if (!queueCode || queueCode.length < 6) {
-      return NextResponse.json({ error: "Missing or invalid code" }, { status: 400 });
-    }
-
     const { data: entry, error: eErr } = await sb
       .from("waitlist_entries")
       .select(
@@ -56,12 +69,13 @@ export async function GET(req: NextRequest) {
           "referral_code",
         ].join(",")
       )
-      .eq("queue_code", queueCode)
+      .eq("email", email)
       .maybeSingle<WaitlistEntry>();
 
     if (eErr) return NextResponse.json({ error: eErr.message }, { status: 500 });
-    if (!entry) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!entry) return NextResponse.json({ error: "Not found on waitlist" }, { status: 404 });
 
+    // 3) compute position
     let position: number | null = null;
 
     if (entry.role === "consumer") {
@@ -111,7 +125,8 @@ export async function GET(req: NextRequest) {
       position = idx >= 0 ? idx + 1 : null;
     }
 
-    const score = entry.role === "vendor" ? Number(entry.vendor_priority_score ?? 0) : Number(entry.referral_points ?? 0);
+    const score =
+      entry.role === "vendor" ? Number(entry.vendor_priority_score ?? 0) : Number(entry.referral_points ?? 0);
 
     const referral_code = entry.referral_code || null;
     const referral_link = referral_code ? `${SITE_URL}/join?ref=${encodeURIComponent(referral_code)}` : null;

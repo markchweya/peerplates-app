@@ -7,8 +7,8 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-// MUST be your production domain on Vercel
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://peerplates.vercel.app";
+// IMPORTANT: set this to https://peerplates.vercel.app in Vercel env
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
 type Role = "consumer" | "vendor";
 const REFERRAL_POINTS_PER_SIGNUP = 10;
@@ -20,7 +20,7 @@ function supabaseAdmin() {
   return createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 }
 
-// Use anon key for sending auth emails
+// Used ONLY to send OTP/magic-link emails (no service role)
 function supabaseAuthMailer() {
   if (!SUPABASE_URL || !ANON_KEY) {
     throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY");
@@ -86,20 +86,22 @@ function enforceMax3Cuisines(answers: any) {
   }
 }
 
-/**
- * ✅ Sends a Supabase Auth Magic Link that redirects to /queue?code=QUEUE_CODE
- * This keeps your “token” (queue_code) in the URL and avoids any typed OTP flow.
- */
-async function sendQueueMagicLink(email: string, queueCode: string) {
-  const auth = supabaseAuthMailer();
-  const emailRedirectTo = `${SITE_URL}/queue?code=${encodeURIComponent(queueCode)}`;
+async function sendQueueEmailViaSupabaseAuth(email: string) {
+  try {
+    const auth = supabaseAuthMailer();
 
-  const { error } = await auth.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo },
-  });
+    // Land them on /queue (no localhost if env is correct)
+    const emailRedirectTo = `${SITE_URL}/queue`;
 
-  if (error) console.warn("Supabase magic link send failed:", error.message);
+    const { error } = await auth.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo },
+    });
+
+    if (error) console.warn("Supabase OTP email failed:", error.message);
+  } catch (e: any) {
+    console.warn("Supabase OTP email threw:", e?.message || e);
+  }
 }
 
 export async function POST(req: Request) {
@@ -123,7 +125,6 @@ export async function POST(req: Request) {
 
     if (ct.includes("multipart/form-data")) {
       const fd = await req.formData();
-
       roleRaw = fd.get("role");
       fullNameRaw = fd.get("fullName") ?? fd.get("full_name");
       emailRaw = fd.get("email");
@@ -145,7 +146,6 @@ export async function POST(req: Request) {
       certificateFile = maybeFile instanceof File ? maybeFile : null;
     } else {
       const body = await req.json();
-
       roleRaw = body?.role;
       fullNameRaw = body?.fullName ?? body?.full_name;
       emailRaw = body?.email;
@@ -182,7 +182,7 @@ export async function POST(req: Request) {
     let university = pickUniversity(answers?.university);
     if (isStudent === false) university = null;
 
-    // Validate referral code
+    // referral validation
     let referred_by: string | null = null;
     let referrer_id: string | null = null;
 
@@ -227,10 +227,10 @@ export async function POST(req: Request) {
 
       accepted_privacy,
       consented_at: new Date().toISOString(),
-    };
 
-    insertPayload["marketing_consent"] = marketing_consent;
-    insertPayload["accepted_marketing"] = marketing_consent;
+      marketing_consent,
+      accepted_marketing: marketing_consent,
+    };
 
     const { data, error } = await sb
       .from("waitlist_entries")
@@ -246,6 +246,7 @@ export async function POST(req: Request) {
       return jsonError(msg || "Database insert failed.", 500);
     }
 
+    // referral points (non-blocking)
     if (referrer_id) {
       const { error: rpcErr } = await sb.rpc("increment_referral_stats", {
         p_referrer_id: referrer_id,
@@ -254,8 +255,8 @@ export async function POST(req: Request) {
       if (rpcErr) console.error("Referral award failed:", rpcErr);
     }
 
-    // ✅ Send magic link to /queue?code=QUEUE_CODE
-    await sendQueueMagicLink(email, data.queue_code);
+    // ✅ send Supabase magic link + token email
+    await sendQueueEmailViaSupabaseAuth(email);
 
     return NextResponse.json({
       id: data.id,
