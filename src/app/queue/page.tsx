@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { MotionDiv } from "@/app/ui/motion";
 
 const BRAND = "#fcb040";
@@ -14,22 +15,9 @@ type QueueResult = {
   position: number | null;
   score: number;
   created_at: string;
-
   referral_code: string | null;
   referral_link: string | null;
 };
-
-const inputBase =
-  "h-12 w-full rounded-2xl border border-[#fcb040] bg-white px-4 font-semibold text-black outline-none " +
-  "focus:ring-4 focus:ring-[rgba(252,176,64,0.30)]";
-
-const buttonBase =
-  "w-full rounded-2xl bg-[#fcb040] px-6 py-3 text-center font-extrabold text-black transition " +
-  "hover:opacity-95 hover:-translate-y-[1px] disabled:opacity-60 disabled:cursor-not-allowed";
-
-const subtleButton =
-  "w-full rounded-2xl border border-black/10 bg-white px-6 py-3 text-center font-extrabold text-black " +
-  "hover:bg-black/5 transition";
 
 function formatStatus(s: QueueResult["review_status"]) {
   if (s === "approved") return "Approved ✅";
@@ -38,64 +26,76 @@ function formatStatus(s: QueueResult["review_status"]) {
   return "Pending ⏳";
 }
 
-function cleanCode(v: string) {
-  return String(v || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "");
-}
+const inputBase =
+  "h-12 w-full rounded-2xl border border-[#fcb040] bg-white px-4 font-semibold text-black outline-none " +
+  "focus:ring-4 focus:ring-[rgba(252,176,64,0.30)]";
+
+const buttonBase =
+  "w-full rounded-2xl bg-[#fcb040] px-6 py-3 text-center font-extrabold text-black transition hover:opacity-95 hover:-translate-y-[1px] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed";
+
+const subtleButton =
+  "w-full rounded-2xl border border-black/10 bg-white px-6 py-3 text-center font-extrabold text-black hover:bg-black/5 transition";
 
 export default function QueuePage() {
   const sp = useSearchParams();
+  const codeFromUrl = (sp.get("code") || "").trim();
 
-  const [code, setCode] = useState("");
+  const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
+
+  // ✅ Fix Vercel prerender error by only creating Supabase client after mount.
+  useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !anon) return; // show error below
+    setSupabase(createClient(url, anon));
+  }, []);
+
+  const [code, setCode] = useState(codeFromUrl);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [copied, setCopied] = useState(false);
   const [result, setResult] = useState<QueueResult | null>(null);
 
-  const [toast, setToast] = useState<string>("");
-
-  // Pre-fill code from /queue?code=XXXX
-  useEffect(() => {
-    const c = cleanCode(sp.get("code") || "");
-    if (c) setCode(c);
-  }, [sp]);
-
-  const fetchStatus = async () => {
+  const fetchStatus = async (queueCode: string) => {
     setErr("");
+    setLoading(true);
     setResult(null);
 
-    const c = cleanCode(code);
-    if (!c) return setErr("Please enter your code.");
-
-    setLoading(true);
     try {
-      const res = await fetch(`/api/queue-status?code=${encodeURIComponent(c)}`);
+      const res = await fetch(`/api/queue-status?code=${encodeURIComponent(queueCode)}`);
       const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload?.error || "Failed to fetch status.");
+      if (!res.ok) throw new Error(payload?.error || "Failed to fetch queue status.");
       setResult(payload as QueueResult);
     } catch (e: any) {
-      setErr(e?.message || "Something went wrong.");
+      setErr(e?.message || "Failed to fetch status.");
     } finally {
       setLoading(false);
     }
   };
 
-  const copy = async (text: string) => {
+  // Auto-load if link had ?code=
+  useEffect(() => {
+    const c = (codeFromUrl || "").trim();
+    if (c) fetchStatus(c);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codeFromUrl]);
+
+  const copyReferral = async () => {
+    if (!result?.referral_link) return;
     try {
-      await navigator.clipboard.writeText(text);
-      setToast("Copied!");
-      setTimeout(() => setToast(""), 1400);
+      await navigator.clipboard.writeText(result.referral_link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
     } catch {
-      setToast("Copy failed");
-      setTimeout(() => setToast(""), 1400);
+      setErr("Copy failed. Please copy manually.");
     }
   };
+
+  const envMissing = !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   return (
     <main className="min-h-screen bg-white text-black">
       <div className="mx-auto w-full max-w-xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
-        {/* Header */}
         <MotionDiv
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -109,34 +109,28 @@ export default function QueuePage() {
           <div className="text-sm text-black/60 whitespace-nowrap">Queue</div>
         </MotionDiv>
 
-        {/* Toast */}
-        {toast ? (
-          <MotionDiv
-            initial={{ opacity: 0, y: 8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.18 }}
-            className="mt-4 inline-flex rounded-2xl border border-black/10 bg-black/5 px-4 py-2 text-sm font-semibold"
-          >
-            {toast}
-          </MotionDiv>
-        ) : null}
-
-        {/* Card */}
         <MotionDiv
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55, delay: 0.06 }}
-          className="mt-6 rounded-3xl border border-black/10 bg-white p-6 shadow-sm"
+          transition={{ duration: 0.55, delay: 0.08 }}
+          className="mt-8 rounded-3xl border border-black/10 bg-white p-6 shadow-sm"
         >
           <h1 className="text-xl font-extrabold tracking-tight font-heading">Check your queue status</h1>
           <p className="mt-2 text-sm text-black/60">
-            Paste the code you received after signing up to view your status and position.
+            Paste your queue code (from email) to view your current status and position.
           </p>
+
+          {envMissing ? (
+            <div className="mt-4 rounded-2xl border border-black/10 bg-black/5 p-3 text-sm">
+              Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel env vars.
+            </div>
+          ) : null}
 
           {err ? (
             <MotionDiv
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
               className="mt-4 rounded-2xl border border-black/10 bg-black/5 p-3 text-sm text-black"
             >
               {err}
@@ -146,28 +140,31 @@ export default function QueuePage() {
           {!result ? (
             <div className="mt-5 grid gap-3">
               <div className="grid gap-2">
-                <label className="text-sm font-semibold">Your code</label>
+                <label className="text-sm font-semibold">Queue code</label>
                 <input
                   className={inputBase}
-                  placeholder="E.g. 8F3K9M2Q"
+                  placeholder="e.g. 7H2K9QX1AB"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  inputMode="text"
                 />
               </div>
 
-              <button className={buttonBase} onClick={fetchStatus} disabled={loading}>
-                {loading ? "Checking…" : "View status"}
+              <button
+                className={buttonBase}
+                onClick={() => fetchStatus(code.trim())}
+                disabled={loading || !code.trim() || envMissing}
+              >
+                {loading ? "Loading…" : "View status"}
               </button>
 
               <div className="text-xs text-black/50">
-                Tip: if you got a link in email, it should open this page with the code pre-filled.
+                Don’t have your code? Check the email you received after submitting the waitlist form.
               </div>
             </div>
           ) : (
             <MotionDiv
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0, scale: 0.98, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
               transition={{ duration: 0.35 }}
               className="mt-6 grid gap-3"
             >
@@ -187,62 +184,51 @@ export default function QueuePage() {
 
                   <div>
                     <span className="font-semibold">Queue position:</span>{" "}
-                    {result.position ? (
-                      <span className="font-extrabold">#{result.position}</span>
-                    ) : (
-                      <span className="text-black/60">Not available</span>
-                    )}
+                    {result.position ? <span className="font-extrabold">#{result.position}</span> : <span className="text-black/60">Not available</span>}
                   </div>
 
                   <div>
-                    <span className="font-semibold">
-                      {result.role === "consumer" ? "Referral points" : "Vendor score"}:
-                    </span>{" "}
+                    <span className="font-semibold">{result.role === "consumer" ? "Referral points" : "Vendor score"}:</span>{" "}
                     <span className="font-extrabold">{result.score}</span>
                   </div>
 
-                  <div className="text-xs text-black/50">
-                    Joined: {new Date(result.created_at).toLocaleString()}
-                  </div>
+                  <div className="text-xs text-black/50">Joined: {new Date(result.created_at).toLocaleString()}</div>
                 </div>
               </div>
 
-              {/* Referral link (goes to /join?ref=... so they choose role first) */}
+              {/* Referral link + copy */}
               {result.referral_link ? (
                 <MotionDiv
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35, delay: 0.08 }}
+                  transition={{ duration: 0.35, delay: 0.05 }}
                   className="rounded-3xl border border-black/10 bg-white p-4"
                 >
                   <div className="text-sm font-extrabold">Your referral link</div>
                   <div className="mt-2 grid gap-2">
                     <div className="flex items-center gap-2">
-                      <input className={inputBase} readOnly value={result.referral_link} />
+                      <input className={inputBase} value={result.referral_link} readOnly />
+                      <button
+                        type="button"
+                        onClick={copyReferral}
+                        className="shrink-0 rounded-2xl border border-black/10 bg-white px-4 py-3 font-extrabold hover:bg-black/5 transition"
+                      >
+                        {copied ? "Copied!" : "Copy"}
+                      </button>
                     </div>
-                    <button className={subtleButton} onClick={() => copy(result.referral_link!)}>
-                      Copy referral link
-                    </button>
                     <div className="text-xs text-black/50">
-                      Share this link. They’ll land on the role chooser (Consumer/Vendor) first.
+                      This goes to <span className="font-semibold">/join</span> so they choose Vendor or Consumer first.
                     </div>
                   </div>
                 </MotionDiv>
               ) : null}
 
               <div className="grid gap-2 sm:grid-cols-2">
-                <button className={buttonBase} onClick={fetchStatus} disabled={loading}>
+                <button className={buttonBase} onClick={() => fetchStatus(code.trim())} disabled={loading}>
                   {loading ? "Refreshing…" : "Refresh"}
                 </button>
-                <button
-                  className={subtleButton}
-                  onClick={() => {
-                    setResult(null);
-                    setErr("");
-                  }}
-                  disabled={loading}
-                >
-                  Check a different code
+                <button className={subtleButton} onClick={() => { setResult(null); setErr(""); }} disabled={loading}>
+                  Check another code
                 </button>
               </div>
             </MotionDiv>

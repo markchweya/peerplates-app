@@ -5,9 +5,7 @@ import type { NextRequest } from "next/server";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-// Used to craft referral links shown in the Queue page
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://peerplates.vercel.app";
 
 type Role = "consumer" | "vendor";
 type ReviewStatus = "pending" | "reviewed" | "approved" | "rejected";
@@ -25,17 +23,12 @@ type WaitlistEntry = {
 };
 
 function supabaseAdmin() {
-  if (!SUPABASE_URL || !SERVICE_KEY) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-  }
+  if (!SUPABASE_URL || !SERVICE_KEY) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
   return createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 }
 
 function cleanCode(v: string) {
-  return String(v || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "");
+  return String(v || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
 export async function GET(req: NextRequest) {
@@ -48,7 +41,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Missing or invalid code" }, { status: 400 });
     }
 
-    // 1) Find entry by queue_code
     const { data: entry, error: eErr } = await sb
       .from("waitlist_entries")
       .select(
@@ -70,7 +62,6 @@ export async function GET(req: NextRequest) {
     if (eErr) return NextResponse.json({ error: eErr.message }, { status: 500 });
     if (!entry) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    // 2) Compute position
     let position: number | null = null;
 
     if (entry.role === "consumer") {
@@ -120,16 +111,10 @@ export async function GET(req: NextRequest) {
       position = idx >= 0 ? idx + 1 : null;
     }
 
-    const score =
-      entry.role === "vendor"
-        ? Number(entry.vendor_priority_score ?? 0)
-        : Number(entry.referral_points ?? 0);
+    const score = entry.role === "vendor" ? Number(entry.vendor_priority_score ?? 0) : Number(entry.referral_points ?? 0);
 
-    // ✅ Referral link should go to role-chooser page
     const referral_code = entry.referral_code || null;
-    const referral_link = referral_code
-      ? `${SITE_URL}/join?ref=${encodeURIComponent(referral_code)}`
-      : null;
+    const referral_link = referral_code ? `${SITE_URL}/join?ref=${encodeURIComponent(referral_code)}` : null;
 
     return NextResponse.json({
       email: entry.email,

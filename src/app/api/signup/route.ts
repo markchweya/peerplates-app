@@ -3,23 +3,29 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { vendorPriorityScoreFromAnswers } from "@/lib/vendorPriorityScore";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// MUST be your production domain on Vercel
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://peerplates.vercel.app";
 
 type Role = "consumer" | "vendor";
-
 const REFERRAL_POINTS_PER_SIGNUP = 10;
 
 function supabaseAdmin() {
   if (!SUPABASE_URL || !SERVICE_KEY) {
-    throw new Error(
-      "Missing Supabase env vars. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel Environment Variables."
-    );
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
   }
   return createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+}
+
+// Use anon key for sending auth emails
+function supabaseAuthMailer() {
+  if (!SUPABASE_URL || !ANON_KEY) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  }
+  return createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
 }
 
 function jsonError(message: string, status = 400) {
@@ -80,6 +86,22 @@ function enforceMax3Cuisines(answers: any) {
   }
 }
 
+/**
+ * ✅ Sends a Supabase Auth Magic Link that redirects to /queue?code=QUEUE_CODE
+ * This keeps your “token” (queue_code) in the URL and avoids any typed OTP flow.
+ */
+async function sendQueueMagicLink(email: string, queueCode: string) {
+  const auth = supabaseAuthMailer();
+  const emailRedirectTo = `${SITE_URL}/queue?code=${encodeURIComponent(queueCode)}`;
+
+  const { error } = await auth.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo },
+  });
+
+  if (error) console.warn("Supabase magic link send failed:", error.message);
+}
+
 export async function POST(req: Request) {
   const sb = supabaseAdmin();
 
@@ -137,7 +159,6 @@ export async function POST(req: Request) {
       answers = body?.answers || {};
     }
 
-    // Honeypot
     const hp = String(hpRaw || "").trim();
     if (hp) return jsonError("Bot detected.", 400);
 
@@ -183,7 +204,6 @@ export async function POST(req: Request) {
 
     const vendor_priority_score = role === "vendor" ? vendorPriorityScoreFromAnswers(answers) : 0;
 
-    // Optional: certificate upload not wired yet
     let certificate_url: string | null = null;
     void certificateFile;
 
@@ -209,16 +229,8 @@ export async function POST(req: Request) {
       consented_at: new Date().toISOString(),
     };
 
-    // Support both column names (your schema has both)
-    insertPayload.marketing_consent = marketing_consent;
-    insertPayload.accepted_marketing = marketing_consent;
-
-    // (optional extras)
-    insertPayload.request_ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      req.headers.get("x-real-ip") ||
-      null;
-    insertPayload.user_agent = req.headers.get("user-agent") || null;
+    insertPayload["marketing_consent"] = marketing_consent;
+    insertPayload["accepted_marketing"] = marketing_consent;
 
     const { data, error } = await sb
       .from("waitlist_entries")
@@ -228,14 +240,12 @@ export async function POST(req: Request) {
 
     if (error) {
       const msg = String(error.message || "");
-      // Covers: unique index on lower(email) and other dupes
-      if (error.code === "23505" || msg.toLowerCase().includes("duplicate")) {
+      if (msg.toLowerCase().includes("duplicate") || msg.includes("23505")) {
         return jsonError("This email is already on the waitlist.", 409);
       }
       return jsonError(msg || "Database insert failed.", 500);
     }
 
-    // Award referral points — do not block signup
     if (referrer_id) {
       const { error: rpcErr } = await sb.rpc("increment_referral_stats", {
         p_referrer_id: referrer_id,
@@ -244,7 +254,9 @@ export async function POST(req: Request) {
       if (rpcErr) console.error("Referral award failed:", rpcErr);
     }
 
-    // ✅ Codes-only: do NOT send any Supabase Auth email here.
+    // ✅ Send magic link to /queue?code=QUEUE_CODE
+    await sendQueueMagicLink(email, data.queue_code);
+
     return NextResponse.json({
       id: data.id,
       referral_code: data.referral_code,
