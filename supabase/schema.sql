@@ -1,152 +1,215 @@
 -- supabase/schema.sql
--- PeerPlates Waitlist: TJ-001..TJ-005 + admin review + referrals + vendor override
--- + privacy/consent + basic spam protection fields
--- Idempotent where possible.
+-- PeerPlates Waitlist schema (idempotent; safe to paste into Supabase SQL Editor too)
 
+-- 1) Extensions
 create extension if not exists pgcrypto;
 
--- 1) Main table
+-- 2) Base table (created only if missing)
 create table if not exists public.waitlist_entries (
   id uuid primary key default gen_random_uuid(),
 
+  -- Identity / contact
   role text not null check (role in ('consumer','vendor')),
   full_name text not null,
   email text not null,
   phone text,
 
+  -- Student fields (derived from answers)
   is_student boolean,
   university text,
 
+  -- Raw form answers JSON
   answers jsonb not null default '{}'::jsonb,
 
-  -- Referral identity
+  -- Referral system
   referral_code text unique,
   referred_by text,
+  referrals_count integer not null default 0,
+  referral_points integer not null default 0,
 
-  -- Vendor-only score
-  vendor_priority_score int not null default 0,
+  -- Vendor priority / ordering
+  vendor_priority_score integer not null default 0 check (vendor_priority_score between 0 and 10),
+  vendor_queue_override integer,
   certificate_url text,
 
-  -- TJ-005: referral movement / stats
-  referral_points int not null default 0,
-  referrals_count int not null default 0,
-
-  -- TJ-004: Admin review
-  review_status text not null default 'pending',
+  -- Review workflow
+  review_status text not null default 'pending' check (review_status in ('pending','reviewed','approved','rejected')),
   admin_notes text,
   reviewed_at timestamptz,
   reviewed_by text,
 
-  -- TJ-004: Manual vendor ordering (lower = earlier)
-  vendor_queue_override integer,
+  -- ✅ Queue lookup (public code users can paste)
+  queue_code text unique,
 
-  -- Privacy + consent
+  -- Consent
   accepted_privacy boolean not null default false,
-  accepted_marketing boolean not null default false,
-  privacy_version text,
   consented_at timestamptz,
+  accepted_marketing boolean not null default false,
+  marketing_consent boolean not null default false,
 
-  -- Tracking / spam protection (basic)
-  signup_source text,
-  captcha_verified boolean not null default false,
-  request_ip text,
-  user_agent text,
-  flagged boolean not null default false,
+  -- Existing extra fields (optional but harmless)
+  captcha_verified boolean,
+  flagged boolean,
   flagged_reason text,
+  privacy_version text,
+  request_ip text,
+  signup_source text,
+  user_agent text,
 
+  -- Timestamps
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
--- 2) Add missing columns (if table existed already)
-alter table public.waitlist_entries add column if not exists referral_points int not null default 0;
-alter table public.waitlist_entries add column if not exists referrals_count int not null default 0;
+-- 3) Ensure columns exist even if table already existed
+alter table public.waitlist_entries
+  -- consent (safe)
+  add column if not exists accepted_marketing boolean not null default false,
+  add column if not exists marketing_consent boolean not null default false,
 
-alter table public.waitlist_entries add column if not exists review_status text not null default 'pending';
-alter table public.waitlist_entries add column if not exists admin_notes text;
-alter table public.waitlist_entries add column if not exists reviewed_at timestamptz;
-alter table public.waitlist_entries add column if not exists reviewed_by text;
+  -- extra fields you already have (safe)
+  add column if not exists captcha_verified boolean,
+  add column if not exists flagged boolean,
+  add column if not exists flagged_reason text,
+  add column if not exists privacy_version text,
+  add column if not exists request_ip text,
+  add column if not exists signup_source text,
+  add column if not exists user_agent text,
 
-alter table public.waitlist_entries add column if not exists vendor_queue_override integer;
+  -- extracted columns (safe)
+  add column if not exists compliance_readiness text[] not null default '{}'::text[],
+  add column if not exists instagram_handle text,
+  add column if not exists bus_minutes integer,
 
-alter table public.waitlist_entries add column if not exists accepted_privacy boolean not null default false;
-alter table public.waitlist_entries add column if not exists accepted_marketing boolean not null default false;
-alter table public.waitlist_entries add column if not exists privacy_version text;
-alter table public.waitlist_entries add column if not exists consented_at timestamptz;
+  -- NOTE: city exists in your current schema; leaving it harmless even if unused
+  add column if not exists city text,
 
-alter table public.waitlist_entries add column if not exists signup_source text;
-alter table public.waitlist_entries add column if not exists captcha_verified boolean not null default false;
-alter table public.waitlist_entries add column if not exists request_ip text;
-alter table public.waitlist_entries add column if not exists user_agent text;
-alter table public.waitlist_entries add column if not exists flagged boolean not null default false;
-alter table public.waitlist_entries add column if not exists flagged_reason text;
+  add column if not exists top_cuisines text[] not null default '{}'::text[],
+  add column if not exists delivery_area text,
+  add column if not exists dietary_preferences text[] not null default '{}'::text[],
 
-alter table public.waitlist_entries add column if not exists updated_at timestamptz not null default now();
+  -- ✅ queue_code
+  add column if not exists queue_code text;
 
--- 3) Ensure review_status check constraint exists
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint c
-    join pg_class t on t.oid = c.conrelid
-    join pg_namespace n on n.oid = t.relnamespace
-    where n.nspname = 'public'
-      and t.relname = 'waitlist_entries'
-      and c.conname = 'waitlist_entries_review_status_chk'
-  ) then
-    alter table public.waitlist_entries
-      add constraint waitlist_entries_review_status_chk
-      check (review_status in ('pending','reviewed','approved','rejected'));
-  end if;
-end $$;
+-- 4) Indexes
+create index if not exists waitlist_entries_role_created_at_idx
+  on public.waitlist_entries (role, created_at);
 
--- 4) updated_at trigger
+create index if not exists waitlist_entries_review_status_idx
+  on public.waitlist_entries (review_status);
+
+create index if not exists waitlist_entries_referral_code_idx
+  on public.waitlist_entries (referral_code);
+
+create index if not exists waitlist_entries_queue_code_idx
+  on public.waitlist_entries (queue_code);
+
+create index if not exists waitlist_entries_city_idx
+  on public.waitlist_entries (city);
+
+create index if not exists waitlist_entries_vendor_order_idx
+  on public.waitlist_entries (vendor_queue_override, vendor_priority_score desc, created_at asc)
+  where role = 'vendor';
+
+create index if not exists waitlist_entries_consumer_order_idx
+  on public.waitlist_entries (referral_points desc, created_at asc)
+  where role = 'consumer';
+
+-- Optional: case-insensitive unique email (comment out if you have duplicates)
+create unique index if not exists waitlist_entries_email_lower_uniq
+  on public.waitlist_entries (lower(email));
+
+-- 5) updated_at trigger
 create or replace function public.set_updated_at()
-returns trigger as $$
+returns trigger
+language plpgsql
+as $$
 begin
   new.updated_at = now();
   return new;
 end;
-$$ language plpgsql;
+$$;
 
 drop trigger if exists trg_waitlist_set_updated_at on public.waitlist_entries;
-
 create trigger trg_waitlist_set_updated_at
 before update on public.waitlist_entries
 for each row execute function public.set_updated_at();
 
--- 5) Helpful indexes
-create index if not exists waitlist_entries_role_idx
-  on public.waitlist_entries(role);
+-- 6) Sync extracted columns from answers JSON -> real columns
+create or replace function public.sync_waitlist_extracted_columns()
+returns trigger
+language plpgsql
+as $$
+declare
+  v jsonb;
+begin
+  v := coalesce(new.answers, '{}'::jsonb);
 
-create index if not exists waitlist_entries_created_at_idx
-  on public.waitlist_entries(created_at);
+  -- City (tries multiple keys) - optional
+  new.city :=
+    nullif(
+      trim(
+        coalesce(
+          v->>'city',
+          v->>'location_city',
+          v->>'vendor_city',
+          v->>'consumer_city',
+          ''
+        )
+      ),
+      ''
+    );
 
-create index if not exists waitlist_entries_review_status_idx
-  on public.waitlist_entries(review_status);
+  -- compliance_readiness
+  if jsonb_typeof(v->'compliance_readiness') = 'array' then
+    new.compliance_readiness :=
+      array(select jsonb_array_elements_text(v->'compliance_readiness'));
+  else
+    new.compliance_readiness := '{}'::text[];
+  end if;
 
-create index if not exists waitlist_entries_vendor_score_idx
-  on public.waitlist_entries(vendor_priority_score);
+  -- instagram_handle
+  new.instagram_handle := nullif(trim(coalesce(v->>'instagram_handle','')), '');
 
-create index if not exists waitlist_entries_vendor_queue_override_idx
-  on public.waitlist_entries(vendor_queue_override);
+  -- bus_minutes
+  begin
+    new.bus_minutes := nullif(trim(coalesce(v->>'bus_minutes','')), '')::int;
+  exception when others then
+    new.bus_minutes := null;
+  end;
 
-create index if not exists waitlist_entries_referral_code_idx
-  on public.waitlist_entries(referral_code);
+  -- top_cuisines (try two keys)
+  if jsonb_typeof(v->'top_cuisines') = 'array' then
+    new.top_cuisines := array(select jsonb_array_elements_text(v->'top_cuisines'));
+  elsif jsonb_typeof(v->'cuisines') = 'array' then
+    new.top_cuisines := array(select jsonb_array_elements_text(v->'cuisines'));
+  else
+    new.top_cuisines := '{}'::text[];
+  end if;
 
-create index if not exists waitlist_entries_consumer_sort_idx
-  on public.waitlist_entries(role, referral_points, created_at);
+  -- delivery_area
+  new.delivery_area := nullif(trim(coalesce(v->>'delivery_area','')), '');
 
--- 6) Unique email per role (basic anti-spam)
--- If this fails due to duplicates, you must remove duplicates first.
-create unique index if not exists waitlist_entries_role_email_ux
-  on public.waitlist_entries (role, lower(email));
+  -- dietary_preferences
+  if jsonb_typeof(v->'dietary_preferences') = 'array' then
+    new.dietary_preferences := array(select jsonb_array_elements_text(v->'dietary_preferences'));
+  else
+    new.dietary_preferences := '{}'::text[];
+  end if;
 
--- 7) Referral RPC used by /api/signup
+  return new;
+end;
+$$;
+
+drop trigger if exists sync_waitlist_extracted_columns on public.waitlist_entries;
+create trigger sync_waitlist_extracted_columns
+before insert or update of answers on public.waitlist_entries
+for each row execute function public.sync_waitlist_extracted_columns();
+
+-- 7) Referral RPC used by your API
 create or replace function public.increment_referral_stats(
   p_referrer_id uuid,
-  p_points int
+  p_points integer
 )
 returns void
 language plpgsql
@@ -155,12 +218,21 @@ as $$
 begin
   update public.waitlist_entries
   set
-    referral_points = referral_points + p_points,
-    referrals_count = referrals_count + 1,
-    updated_at = now()
-  where id = p_referrer_id;
+    referrals_count = coalesce(referrals_count, 0) + 1,
+    referral_points = coalesce(referral_points, 0) + greatest(coalesce(p_points,0), 0)
+  where id = p_referrer_id
+    and role = 'consumer';
 end;
 $$;
 
--- 8) Force PostgREST to refresh schema cache
-notify pgrst, 'reload schema';
+-- 8) Backfill extracted columns for existing rows (forces trigger to populate)
+update public.waitlist_entries
+set answers = coalesce(answers, '{}'::jsonb)
+where answers is not null;
+
+update public.waitlist_entries
+set answers = answers
+where true;
+
+-- 9) Optional RLS (leave off unless you’re ready to write policies)
+-- alter table public.waitlist_entries enable row level security;

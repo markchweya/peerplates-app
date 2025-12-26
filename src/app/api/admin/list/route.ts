@@ -10,18 +10,21 @@ function supabaseAdmin() {
   if (!SUPABASE_URL || !SERVICE_KEY) {
     throw new Error("Missing Supabase env vars. Check .env.local");
   }
-  return createClient(SUPABASE_URL, SERVICE_KEY, {
-    auth: { persistSession: false },
-  });
+  return createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 }
 
 function isAuthorized(req: Request) {
-  // If you didn't set ADMIN_SECRET, allow access (dev-friendly).
-  // In production, you SHOULD set ADMIN_SECRET so this becomes enforced.
-  if (!ADMIN_SECRET) return true;
-
+  if (!ADMIN_SECRET) return true; // dev-friendly
   const header = (req.headers.get("x-admin-secret") || "").trim();
   return header === ADMIN_SECRET;
+}
+
+function toBool(v: string | null): boolean | null {
+  if (!v) return null;
+  const s = v.trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(s)) return true;
+  if (["false", "0", "no", "off"].includes(s)) return false;
+  return null;
 }
 
 export async function GET(req: Request) {
@@ -39,6 +42,13 @@ export async function GET(req: Request) {
     const role = (searchParams.get("role") || "all").toLowerCase();
     const status = (searchParams.get("status") || "all").toLowerCase();
     const q = (searchParams.get("q") || "").trim();
+
+    // Vendor-only filters
+    const maxBusMinutesRaw = (searchParams.get("max_bus_minutes") || "").trim();
+    const maxBusMinutes = maxBusMinutesRaw ? Number(maxBusMinutesRaw) : null;
+
+    const hasInstagram = toBool(searchParams.get("has_instagram"));
+    const compliance = (searchParams.get("compliance") || "").trim(); // exact label match inside compliance_readiness[]
 
     let query = sb
       .from("waitlist_entries")
@@ -67,6 +77,14 @@ export async function GET(req: Request) {
           "reviewed_at",
           "reviewed_by",
 
+          // vendor clean columns
+          "instagram_handle",
+          "bus_minutes",
+          "compliance_readiness",
+          "top_cuisines",
+          "delivery_area",
+          "dietary_preferences",
+
           "created_at",
           "updated_at",
         ].join(","),
@@ -82,23 +100,35 @@ export async function GET(req: Request) {
     }
 
     if (q) {
-      // Search full_name OR email
       query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%`);
     }
 
-    // Sorting:
-    // - vendors: override asc (nulls last) then vendor_priority_score desc then created_at asc
-    // - consumers: referral_points desc then created_at asc
-    // - all: newest first
+    // Apply vendor-only filters ONLY when role is explicitly vendor
+    if (role === "vendor") {
+      if (typeof maxBusMinutes === "number" && Number.isFinite(maxBusMinutes)) {
+        query = query.lte("bus_minutes", maxBusMinutes);
+      }
+
+      if (hasInstagram === true) {
+        query = query.not("instagram_handle", "is", null).neq("instagram_handle", "");
+      } else if (hasInstagram === false) {
+        // NULL or empty string
+        query = query.or("instagram_handle.is.null,instagram_handle.eq.");
+      }
+
+      if (compliance) {
+        query = query.contains("compliance_readiness", [compliance]);
+      }
+    }
+
+    // Sorting
     if (role === "vendor") {
       query = query
         .order("vendor_queue_override", { ascending: true, nullsFirst: false })
         .order("vendor_priority_score", { ascending: false })
         .order("created_at", { ascending: true });
     } else if (role === "consumer") {
-      query = query
-        .order("referral_points", { ascending: false })
-        .order("created_at", { ascending: true });
+      query = query.order("referral_points", { ascending: false }).order("created_at", { ascending: true });
     } else {
       query = query.order("created_at", { ascending: false });
     }
@@ -106,14 +136,8 @@ export async function GET(req: Request) {
     query = query.range(offset, offset + limit - 1);
 
     const { data, error, count } = await query;
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    // Add a convenience "score" field:
-    // - vendor score = vendor_priority_score
-    // - consumer score = referral_points
     const rows = (data || []).map((r: any) => ({
       ...r,
       score: r.role === "vendor" ? r.vendor_priority_score ?? 0 : r.referral_points ?? 0,
@@ -126,9 +150,6 @@ export async function GET(req: Request) {
       offset,
     });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Unexpected server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message || "Unexpected server error" }, { status: 500 });
   }
 }

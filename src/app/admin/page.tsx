@@ -1,7 +1,7 @@
 // src/app/admin/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { MotionDiv } from "@/app/ui/motion";
 
@@ -22,16 +22,22 @@ type Entry = {
   referral_code: string | null;
   referred_by: string | null;
 
-  // vendor
   vendor_priority_score: number;
   vendor_queue_override: number | null;
 
-  // TJ-005 referrals
   referrals_count?: number | null;
   referral_points?: number | null;
 
   certificate_url: string | null;
   certificate_signed_url?: string | null;
+
+  // vendor clean columns
+  instagram_handle?: string | null;
+  bus_minutes?: number | null;
+  compliance_readiness?: string[] | null;
+  top_cuisines?: string[] | null;
+  delivery_area?: string | null;
+  dietary_preferences?: string[] | null;
 
   created_at: string;
 
@@ -39,56 +45,188 @@ type Entry = {
   admin_notes: string | null;
   reviewed_at: string | null;
   reviewed_by: string | null;
+
+  score?: number;
 };
 
 const BRAND = "#fcb040";
 const SECRET_KEY = "peerplates_admin_secret";
-
-function pillClass(status: ReviewStatus) {
-  if (status === "approved") return "bg-green-50 text-green-700 border border-green-200";
-  if (status === "rejected") return "bg-red-50 text-red-700 border border-red-200";
-  if (status === "reviewed") return "bg-slate-100 text-slate-700 border border-slate-200";
-  return "bg-amber-50 text-amber-800 border border-amber-200";
-}
 
 function safeStr(v: any) {
   if (v === null || v === undefined) return "";
   return String(v);
 }
 
-function csvEscape(v: any) {
-  const s = safeStr(v);
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
+function joinArr(v: any): string {
+  if (!v) return "";
+  if (Array.isArray(v)) return v.filter(Boolean).join(", ");
+  return String(v);
+}
+
+function normalizeAnswerValue(v: any): string {
+  if (v === null || v === undefined) return "";
+  if (Array.isArray(v)) return v.filter(Boolean).join(", ");
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
+function pillClass(status: ReviewStatus) {
+  // orange + neutrals only
+  if (status === "approved")
+    return "bg-[rgba(252,176,64,0.18)] text-black border border-[rgba(252,176,64,0.55)]";
+  if (status === "rejected")
+    return "bg-black/5 text-black border border-black/10";
+  if (status === "reviewed")
+    return "bg-black/5 text-black/80 border border-black/10";
+  return "bg-[rgba(252,176,64,0.12)] text-black border border-[rgba(252,176,64,0.45)]";
+}
+
+// Branded controls
+const controlBase =
+  "h-10 w-full rounded-2xl border border-[#fcb040] bg-white px-3 font-semibold text-black outline-none " +
+  "focus:ring-4 focus:ring-[rgba(252,176,64,0.25)]";
+
+function AnswersCell({ answers }: { answers: Record<string, any> }) {
+  const entries = Object.entries(answers || {})
+    .filter(([_, v]) => normalizeAnswerValue(v).trim().length > 0)
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  if (entries.length === 0) return <span className="text-black/40">—</span>;
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {entries.map(([k, v]) => (
+        <span
+          key={k}
+          className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2 py-1 text-xs"
+          title={`${k}: ${normalizeAnswerValue(v)}`}
+        >
+          <span className="font-semibold text-black/60">{k}</span>
+          <span className="text-black/30">•</span>
+          <span className="font-semibold text-black max-w-[240px] truncate">
+            {normalizeAnswerValue(v)}
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Custom dropdown (so we avoid the OS blue highlight from native <select>)
+ */
+function BrandSelect<T extends string>({
+  value,
+  onChange,
+  options,
+  className = "",
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string }[];
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (!open) return;
+      const t = e.target as Node;
+      if (btnRef.current?.parentElement && !btnRef.current.parentElement.contains(t)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const current = options.find((o) => o.value === value)?.label ?? "";
+
+  return (
+    <div className={"relative " + className}>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => setOpen((x) => !x)}
+        className={
+          controlBase +
+          " flex items-center justify-between gap-2 text-left pr-10"
+        }
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="truncate">{current}</span>
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 20 20"
+          className={"absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/60 transition " + (open ? "rotate-180" : "")}
+          fill="currentColor"
+        >
+          <path d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4z" />
+        </svg>
+      </button>
+
+      {open ? (
+        <div
+          role="listbox"
+          className="absolute z-50 mt-2 w-full overflow-hidden rounded-2xl border border-[#fcb040] bg-white shadow-lg"
+        >
+          {options.map((opt) => {
+            const active = opt.value === value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  onChange(opt.value);
+                  setOpen(false);
+                }}
+                className={
+                  "w-full px-3 py-2 text-left text-sm font-semibold transition " +
+                  (active
+                    ? "bg-[rgba(252,176,64,0.18)] text-black"
+                    : "bg-white text-black hover:bg-[rgba(252,176,64,0.12)]")
+                }
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export default function AdminPage() {
-  // Auth (shared secret)
   const [adminSecret, setAdminSecret] = useState("");
   const [secretReady, setSecretReady] = useState(false);
 
-  // Filters
   const [role, setRole] = useState<RoleFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [q, setQ] = useState("");
 
-  // Data
+  // Vendor-only filters
+  const [maxBusMinutes, setMaxBusMinutes] = useState("");
+  const [hasInstagram, setHasInstagram] = useState<"" | "true" | "false">("");
+  const [compliance, setCompliance] = useState("");
+
   const [rows, setRows] = useState<Entry[]>([]);
   const [total, setTotal] = useState(0);
   const [limit] = useState(50);
   const [offset, setOffset] = useState(0);
 
-  // UI state
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
-  // Drawer
   const [selected, setSelected] = useState<Entry | null>(null);
   const [notesDraft, setNotesDraft] = useState("");
   const [statusDraft, setStatusDraft] = useState<ReviewStatus>("pending");
   const [vendorOverrideDraft, setVendorOverrideDraft] = useState<string>("");
 
-  // Load secret from sessionStorage
+  const showVendorFilters = role === "vendor";
+
   useEffect(() => {
     const saved = sessionStorage.getItem(SECRET_KEY) || "";
     if (saved) {
@@ -97,15 +235,46 @@ export default function AdminPage() {
     }
   }, []);
 
+  useEffect(() => {
+    // if user leaves vendor, clear vendor-only filters
+    if (role !== "vendor") {
+      setMaxBusMinutes("");
+      setHasInstagram("");
+      setCompliance("");
+    }
+    setOffset(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role]);
+
+  // Build compliance options from the actual data (so filtering is usable)
+  const complianceOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      for (const item of r.compliance_readiness || []) {
+        const s = String(item || "").trim();
+        if (s) set.add(s);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
   const queryString = useMemo(() => {
     const sp = new URLSearchParams();
     if (role !== "all") sp.set("role", role);
     if (status !== "all") sp.set("status", status);
     if (q.trim()) sp.set("q", q.trim());
+
+    if (showVendorFilters) {
+      const mbm = maxBusMinutes.trim();
+      if (mbm) sp.set("max_bus_minutes", mbm);
+      if (hasInstagram) sp.set("has_instagram", hasInstagram);
+      if (compliance.trim()) sp.set("compliance", compliance.trim());
+    }
+
     sp.set("limit", String(limit));
     sp.set("offset", String(offset));
     return sp.toString();
-  }, [role, status, q, limit, offset]);
+  }, [role, status, q, showVendorFilters, maxBusMinutes, hasInstagram, compliance, limit, offset]);
 
   const fetchRows = async () => {
     setErr("");
@@ -138,11 +307,8 @@ export default function AdminPage() {
     setSelected(r);
     setNotesDraft(r.admin_notes || "");
     setStatusDraft(r.review_status || "pending");
-
     setVendorOverrideDraft(
-      r.vendor_queue_override === null || r.vendor_queue_override === undefined
-        ? ""
-        : String(r.vendor_queue_override)
+      r.vendor_queue_override === null || r.vendor_queue_override === undefined ? "" : String(r.vendor_queue_override)
     );
   };
 
@@ -179,7 +345,6 @@ export default function AdminPage() {
     setErr("");
     const nextStatus = forceStatus || statusDraft;
 
-    // vendor override parsing
     let vendor_queue_override: number | null | undefined = undefined;
     if (selected.role === "vendor") {
       const t = vendorOverrideDraft.trim();
@@ -204,7 +369,6 @@ export default function AdminPage() {
       });
 
       updateRowInState(updated);
-
       setStatusDraft(updated.review_status);
       setNotesDraft(updated.admin_notes || "");
       setVendorOverrideDraft(
@@ -236,67 +400,34 @@ export default function AdminPage() {
     }
   };
 
-  const exportCsv = () => {
-    const headers = [
-      "id",
-      "role",
-      "full_name",
-      "email",
-      "phone",
-      "is_student",
-      "university",
-      "review_status",
-      "admin_notes",
-      "reviewed_at",
-      "reviewed_by",
-      "vendor_priority_score",
-      "vendor_queue_override",
-      "referral_points",
-      "referrals_count",
-      "referral_code",
-      "referred_by",
-      "created_at",
-      "answers_json",
-    ];
+  const exportCsv = async () => {
+    setErr("");
+    try {
+      const sp = new URLSearchParams();
+      if (role !== "all") sp.set("role", role);
 
-    const lines = [
-      headers.join(","),
-      ...rows.map((r) =>
-        [
-          r.id,
-          r.role,
-          r.full_name,
-          r.email,
-          r.phone ?? "",
-          r.is_student ?? "",
-          r.university ?? "",
-          r.review_status ?? "",
-          r.admin_notes ?? "",
-          r.reviewed_at ?? "",
-          r.reviewed_by ?? "",
-          r.vendor_priority_score ?? "",
-          r.vendor_queue_override ?? "",
-          r.referral_points ?? "",
-          r.referrals_count ?? "",
-          r.referral_code ?? "",
-          r.referred_by ?? "",
-          r.created_at ?? "",
-          JSON.stringify(r.answers ?? {}),
-        ]
-          .map(csvEscape)
-          .join(",")
-      ),
-    ];
+      const res = await fetch(`/api/admin/export?${sp.toString()}`, {
+        headers: { "x-admin-secret": adminSecret },
+      });
 
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `peerplates_waitlist_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || `Export failed (${res.status})`);
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `peerplates_waitlist_${role === "all" ? "all" : role}_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setErr(e?.message || "Export failed");
+    }
   };
 
   const logout = () => {
@@ -311,7 +442,7 @@ export default function AdminPage() {
   // --- Auth gate ---
   if (!secretReady) {
     return (
-      <main className="min-h-screen bg-white text-slate-900">
+      <main className="min-h-screen bg-white text-black">
         <div className="mx-auto w-full max-w-xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
           <MotionDiv
             initial={{ opacity: 0, y: -10 }}
@@ -323,17 +454,17 @@ export default function AdminPage() {
               <div className="h-10 w-10 rounded-xl" style={{ background: BRAND }} />
               <div className="text-lg font-semibold tracking-tight">PeerPlates</div>
             </Link>
-            <div className="text-sm text-slate-500 whitespace-nowrap">Admin</div>
+            <div className="text-sm text-black/60 whitespace-nowrap">Admin</div>
           </MotionDiv>
 
           <MotionDiv
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.55, delay: 0.08 }}
-            className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
+            className="mt-8 rounded-3xl border border-black/10 bg-white p-6 shadow-sm"
           >
             <h1 className="text-xl font-extrabold tracking-tight">Admin access</h1>
-            <p className="mt-2 text-sm text-slate-600">
+            <p className="mt-2 text-sm text-black/60">
               Paste <span className="font-semibold">ADMIN_SECRET</span> to open the dashboard.
             </p>
 
@@ -349,7 +480,7 @@ export default function AdminPage() {
             </div>
 
             {err ? (
-              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              <div className="mt-4 rounded-2xl border border-black/10 bg-black/5 p-3 text-sm text-black">
                 {err}
               </div>
             ) : null}
@@ -365,7 +496,7 @@ export default function AdminPage() {
                 sessionStorage.setItem(SECRET_KEY, s);
                 setSecretReady(true);
               }}
-              className="mt-5 w-full rounded-2xl bg-[#fcb040] px-6 py-3 text-center font-extrabold text-slate-900 transition hover:opacity-95 hover:-translate-y-[1px]"
+              className="mt-5 w-full rounded-2xl bg-[#fcb040] px-6 py-3 text-center font-extrabold text-black transition hover:opacity-95 hover:-translate-y-[1px]"
             >
               Open dashboard
             </button>
@@ -377,8 +508,8 @@ export default function AdminPage() {
 
   // --- Dashboard ---
   return (
-    <main className="min-h-screen bg-white text-slate-900">
-      <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
+    <main className="min-h-screen bg-white text-black">
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         {/* Top bar */}
         <MotionDiv
           initial={{ opacity: 0, y: -10 }}
@@ -394,146 +525,200 @@ export default function AdminPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={exportCsv}
-              className="rounded-xl border border-slate-200 px-4 py-2 font-semibold hover:bg-slate-50 transition"
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 font-semibold hover:bg-black/5 transition"
             >
               Export CSV
             </button>
             <button
               onClick={logout}
-              className="rounded-xl border border-slate-200 px-4 py-2 font-semibold hover:bg-slate-50 transition"
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 font-semibold hover:bg-black/5 transition"
             >
               Log out
             </button>
           </div>
         </MotionDiv>
 
-        {/* Controls + table */}
         <MotionDiv
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55, delay: 0.08 }}
-          className="mt-8 rounded-3xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm"
+          className="mt-6 rounded-3xl border border-black/10 bg-white p-5 shadow-sm"
         >
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <div className="text-lg font-extrabold tracking-tight">Waitlist Admin</div>
-              <div className="text-sm text-slate-600 mt-1">{loading ? "Loading…" : `${total} total`}</div>
+              <div className="text-sm text-black/60 mt-1">{loading ? "Loading…" : `${total} total`}</div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3 md:grid-cols-4 w-full md:max-w-3xl">
-              <div className="grid gap-1">
-                <label className="text-xs font-semibold text-slate-600">Role</label>
-                <select
-                  value={role}
-                  onChange={(e) => {
-                    setOffset(0);
-                    setRole(e.target.value as RoleFilter);
-                  }}
-                  className="h-11 rounded-2xl border border-[#fcb040] bg-white px-3 font-semibold outline-none"
-                >
-                  <option value="all">All</option>
-                  <option value="consumer">Consumer</option>
-                  <option value="vendor">Vendor</option>
-                </select>
-              </div>
+            {/* Filters */}
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-7 w-full">
+              <BrandSelect<RoleFilter>
+                value={role}
+                onChange={(v) => {
+                  setRole(v);
+                  setOffset(0);
+                }}
+                options={[
+                  { value: "all", label: "Role: All" },
+                  { value: "consumer", label: "Role: Consumer" },
+                  { value: "vendor", label: "Role: Vendor" },
+                ]}
+              />
 
-              <div className="grid gap-1">
-                <label className="text-xs font-semibold text-slate-600">Status</label>
-                <select
-                  value={status}
-                  onChange={(e) => {
-                    setOffset(0);
-                    setStatus(e.target.value as StatusFilter);
-                  }}
-                  className="h-11 rounded-2xl border border-[#fcb040] bg-white px-3 font-semibold outline-none"
-                >
-                  <option value="all">All</option>
-                  <option value="pending">Pending</option>
-                  <option value="reviewed">Reviewed</option>
-                  <option value="approved">Approved</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-              </div>
+              <BrandSelect<StatusFilter>
+                value={status}
+                onChange={(v) => {
+                  setStatus(v);
+                  setOffset(0);
+                }}
+                options={[
+                  { value: "all", label: "Status: All" },
+                  { value: "pending", label: "Status: Pending" },
+                  { value: "reviewed", label: "Status: Reviewed" },
+                  { value: "approved", label: "Status: Approved" },
+                  { value: "rejected", label: "Status: Rejected" },
+                ]}
+              />
 
-              <div className="grid gap-1 sm:col-span-2">
-                <label className="text-xs font-semibold text-slate-600">Search</label>
-                <input
-                  value={q}
-                  onChange={(e) => {
-                    setOffset(0);
-                    setQ(e.target.value);
-                  }}
-                  placeholder="Name or email…"
-                  className="h-11 rounded-2xl border border-[#fcb040] bg-white px-4 font-semibold outline-none focus:ring-4 focus:ring-[rgba(252,176,64,0.30)]"
-                />
-              </div>
+              {showVendorFilters ? (
+                <>
+                  <input
+                    value={maxBusMinutes}
+                    onChange={(e) => {
+                      setOffset(0);
+                      setMaxBusMinutes(e.target.value);
+                    }}
+                    placeholder="Max bus min"
+                    inputMode="numeric"
+                    className={controlBase}
+                  />
+
+                  <BrandSelect<"" | "true" | "false">
+                    value={hasInstagram}
+                    onChange={(v) => {
+                      setHasInstagram(v);
+                      setOffset(0);
+                    }}
+                    options={[
+                      { value: "", label: "Has IG: All" },
+                      { value: "true", label: "Has IG: Yes" },
+                      { value: "false", label: "Has IG: No" },
+                    ]}
+                  />
+
+                  <BrandSelect<string>
+                    value={compliance}
+                    onChange={(v) => {
+                      setCompliance(v);
+                      setOffset(0);
+                    }}
+                    options={[
+                      { value: "", label: "Compliance: All" },
+                      ...complianceOptions.map((c) => ({ value: c, label: c })),
+                    ]}
+                  />
+                </>
+              ) : (
+                <div className="hidden lg:block lg:col-span-3" />
+              )}
+
+              <input
+                value={q}
+                onChange={(e) => {
+                  setOffset(0);
+                  setQ(e.target.value);
+                }}
+                placeholder="Search name or email"
+                className={controlBase + " lg:col-span-7"}
+              />
             </div>
           </div>
 
           {err ? (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {err}
-            </div>
+            <div className="mt-4 rounded-2xl border border-black/10 bg-black/5 p-3 text-sm text-black">{err}</div>
           ) : null}
 
-          <div className="mt-5 overflow-auto rounded-2xl border border-slate-200">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-700">
+          {/* Table */}
+          <div className="mt-4 overflow-auto rounded-2xl border border-black/10">
+            <table className="w-full text-sm table-fixed">
+              <thead className="bg-black/5 text-black/80 sticky top-0 z-10">
                 <tr>
-                  <th className="p-3 text-left">Role</th>
-                  <th className="p-3 text-left">Name</th>
-                  <th className="p-3 text-left">Email</th>
-                  <th className="p-3 text-left">Status</th>
-                  <th className="p-3 text-left">Override</th>
-                  <th className="p-3 text-left">Score</th>
-                  <th className="p-3 text-left">Referrals</th>
-                  <th className="p-3 text-left">Created</th>
-                  <th className="p-3 text-right">Action</th>
+                  <th className="p-3 text-left w-[90px]">Role</th>
+                  <th className="p-3 text-left w-[160px]">Name</th>
+                  <th className="p-3 text-left w-[220px]">Email</th>
+
+                  <th className="p-3 text-left w-[90px]">Bus</th>
+                  <th className="p-3 text-left w-[70px]">IG</th>
+
+                  <th className="p-3 text-left w-[120px]">Status</th>
+                  <th className="p-3 text-left w-[90px]">Override</th>
+                  <th className="p-3 text-left w-[70px]">Score</th>
+                  <th className="p-3 text-left w-[110px]">Referrals</th>
+                  <th className="p-3 text-left w-[210px]">Created</th>
+
+                  <th className="p-3 text-left w-[820px]">Answers</th>
+                  <th className="p-3 text-right w-[110px]">Action</th>
                 </tr>
               </thead>
 
-              <tbody>
+              <tbody className="[&>tr:nth-child(even)]:bg-black/[0.02]">
                 {rows.map((r) => {
                   const points = r.referral_points ?? 0;
                   const count = r.referrals_count ?? 0;
 
+                  const ig = safeStr(r.instagram_handle || "").trim();
+                  const hasIg = ig.length > 0;
+
                   return (
-                    <tr key={r.id} className="border-t border-slate-200">
+                    <tr
+                      key={r.id}
+                      className="border-t border-black/10 hover:bg-[rgba(252,176,64,0.12)] transition"
+                    >
                       <td className="p-3 font-semibold">{r.role}</td>
-                      <td className="p-3 font-semibold">{r.full_name}</td>
-                      <td className="p-3 text-slate-700">{r.email}</td>
+                      <td className="p-3 font-semibold truncate" title={r.full_name}>
+                        {r.full_name}
+                      </td>
+                      <td className="p-3 text-black/70 truncate" title={r.email}>
+                        {r.email}
+                      </td>
+
+                      <td className="p-3 text-black/70">
+                        {typeof r.bus_minutes === "number" ? `${r.bus_minutes} min` : "—"}
+                      </td>
+
+                      {/* Always Yes/No (never blank) */}
+                      <td className="p-3 text-black/70">{hasIg ? "Yes" : "No"}</td>
+
                       <td className="p-3">
-                        <span
-                          className={`inline-flex rounded-full px-3 py-1 text-xs font-extrabold ${pillClass(
-                            r.review_status
-                          )}`}
-                        >
+                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-extrabold ${pillClass(r.review_status)}`}>
                           {r.review_status}
                         </span>
                       </td>
 
                       <td className="p-3">{r.role === "vendor" ? r.vendor_queue_override ?? "—" : "—"}</td>
-
-                      {/* Score: vendors show vendor_priority_score; consumers show referral_points */}
                       <td className="p-3 font-semibold">{r.role === "vendor" ? r.vendor_priority_score : points}</td>
 
-                      {/* Referrals: only meaningful for consumers */}
-                      <td className="p-3 text-slate-700">
+                      <td className="p-3 text-black/70">
                         {r.role === "consumer" ? (
                           <span className="inline-flex items-center gap-2">
-                            <span className="font-semibold">{count}</span>
-                            <span className="text-xs text-slate-500">(signups)</span>
+                            <span className="font-semibold text-black">{count}</span>
+                            <span className="text-xs text-black/50">(signups)</span>
                           </span>
                         ) : (
                           "—"
                         )}
                       </td>
 
-                      <td className="p-3 text-slate-600">{new Date(r.created_at).toLocaleString()}</td>
+                      <td className="p-3 text-black/60">{new Date(r.created_at).toLocaleString()}</td>
+
+                      <td className="p-3">
+                        <AnswersCell answers={r.answers || {}} />
+                      </td>
+
                       <td className="p-3 text-right">
                         <button
                           onClick={() => openRow(r)}
-                          className="rounded-xl bg-[#fcb040] px-4 py-2 font-extrabold text-slate-900 transition hover:opacity-95"
+                          className="rounded-xl bg-[#fcb040] px-4 py-2 font-extrabold text-black transition hover:opacity-95"
                         >
                           Review
                         </button>
@@ -544,7 +729,7 @@ export default function AdminPage() {
 
                 {!loading && rows.length === 0 ? (
                   <tr>
-                    <td className="p-6 text-slate-500" colSpan={9}>
+                    <td className="p-6 text-black/60" colSpan={12}>
                       No rows found.
                     </td>
                   </tr>
@@ -555,23 +740,21 @@ export default function AdminPage() {
 
           {/* Pagination */}
           <div className="mt-4 flex items-center justify-between">
-            <div className="text-xs text-slate-500">
-              {total === 0
-                ? "—"
-                : `Showing ${Math.min(total, offset + 1)}–${Math.min(total, offset + rows.length)} of ${total}`}
+            <div className="text-xs text-black/50">
+              {total === 0 ? "—" : `Showing ${Math.min(total, offset + 1)}–${Math.min(total, offset + rows.length)} of ${total}`}
             </div>
             <div className="flex gap-2">
               <button
                 disabled={offset === 0}
                 onClick={() => setOffset((x) => Math.max(0, x - limit))}
-                className="rounded-xl border border-slate-200 px-4 py-2 font-semibold disabled:opacity-50 hover:bg-slate-50 transition"
+                className="rounded-xl border border-black/10 px-4 py-2 font-semibold disabled:opacity-50 hover:bg-black/5 transition"
               >
                 Prev
               </button>
               <button
                 disabled={offset + limit >= total}
                 onClick={() => setOffset((x) => x + limit)}
-                className="rounded-xl border border-slate-200 px-4 py-2 font-semibold disabled:opacity-50 hover:bg-slate-50 transition"
+                className="rounded-xl border border-black/10 px-4 py-2 font-semibold disabled:opacity-50 hover:bg-black/5 transition"
               >
                 Next
               </button>
@@ -580,7 +763,7 @@ export default function AdminPage() {
         </MotionDiv>
       </div>
 
-      {/* Drawer */}
+      {/* Drawer (answers removed already; table shows them) */}
       {selected ? (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/30" onClick={closeDrawer} />
@@ -589,67 +772,80 @@ export default function AdminPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-xl font-extrabold tracking-tight">{selected.full_name}</div>
-                  <div className="mt-1 text-sm text-slate-600">{selected.email}</div>
-                  <div className="mt-2 text-xs text-slate-500">
+                  <div className="mt-1 text-sm text-black/60">{selected.email}</div>
+                  <div className="mt-2 text-xs text-black/50">
                     <span className="font-mono break-all">{selected.id}</span>
                   </div>
                 </div>
 
                 <button
                   onClick={closeDrawer}
-                  className="rounded-xl border border-slate-200 px-3 py-2 font-semibold hover:bg-slate-50 transition"
+                  className="rounded-xl border border-black/10 px-3 py-2 font-semibold hover:bg-black/5 transition"
                 >
                   Close
                 </button>
               </div>
 
-              {/* Referral summary (consumers) */}
+              {selected.role === "vendor" ? (
+                <div className="mt-5 grid gap-2 rounded-3xl border border-[#fcb040] bg-white p-4">
+                  <div className="text-sm font-extrabold">Vendor summary</div>
+                  <div className="text-sm text-black/80">
+                    <span className="font-semibold">Bus:</span>{" "}
+                    {typeof selected.bus_minutes === "number" ? `${selected.bus_minutes} min` : "—"}{" "}
+                    <span className="text-black/40">•</span>{" "}
+                    <span className="font-semibold">IG:</span>{" "}
+                    {safeStr(selected.instagram_handle).trim() ? safeStr(selected.instagram_handle) : "No"}
+                  </div>
+                  <div className="text-sm text-black/80">
+                    <span className="font-semibold">Compliance:</span> {joinArr(selected.compliance_readiness) || "—"}
+                  </div>
+                </div>
+              ) : null}
+
               {selected.role === "consumer" ? (
                 <div className="mt-5 grid gap-2 rounded-3xl border border-[#fcb040] bg-white p-4">
                   <div className="text-sm font-extrabold">Referrals</div>
-                  <div className="text-sm text-slate-700">
+                  <div className="text-sm text-black/80">
                     <span className="font-semibold">Points:</span> {selected.referral_points ?? 0}{" "}
-                    <span className="text-slate-500">•</span>{" "}
+                    <span className="text-black/40">•</span>{" "}
                     <span className="font-semibold">Signups:</span> {selected.referrals_count ?? 0}
                   </div>
                   {selected.referral_code ? (
-                    <div className="text-xs text-slate-500">
+                    <div className="text-xs text-black/50">
                       Referral code: <span className="font-mono">{selected.referral_code}</span>
                     </div>
                   ) : null}
                 </div>
               ) : null}
 
-              {/* Quick actions */}
               <div className="mt-5 grid gap-3 rounded-3xl border border-[#fcb040] bg-white p-4">
                 <div className="text-sm font-extrabold">Quick actions</div>
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => saveReview("reviewed")}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2 font-extrabold hover:bg-slate-50 transition"
+                    className="rounded-2xl border border-black/10 bg-white px-4 py-2 font-extrabold hover:bg-black/5 transition"
                   >
                     Mark reviewed
                   </button>
                   <button
                     onClick={() => saveReview("approved")}
-                    className="rounded-2xl bg-green-600 px-4 py-2 font-extrabold text-white hover:opacity-95 transition"
+                    className="rounded-2xl bg-[#fcb040] px-4 py-2 font-extrabold text-black hover:opacity-95 transition"
                   >
                     Approve
                   </button>
                   <button
                     onClick={() => saveReview("rejected")}
-                    className="rounded-2xl bg-red-600 px-4 py-2 font-extrabold text-white hover:opacity-95 transition"
+                    className="rounded-2xl border border-[#fcb040] bg-white px-4 py-2 font-extrabold text-black hover:bg-[rgba(252,176,64,0.12)] transition"
                   >
                     Reject
                   </button>
                 </div>
               </div>
 
-              {/* Manual vendor queue override */}
               {selected.role === "vendor" ? (
                 <div className="mt-5 grid gap-2 rounded-3xl border border-[#fcb040] bg-white p-4">
                   <div className="text-sm font-extrabold">Manual vendor queue override</div>
-                  <div className="text-xs text-slate-600">
+                  <div className="text-xs text-black/60">
                     Lower number = earlier in queue. Leave blank to fall back to auto ordering (score + time).
                   </div>
 
@@ -664,14 +860,14 @@ export default function AdminPage() {
 
                     <button
                       onClick={() => saveReview()}
-                      className="rounded-2xl bg-[#fcb040] px-5 py-2.5 font-extrabold text-slate-900 transition hover:opacity-95"
+                      className="rounded-2xl bg-[#fcb040] px-5 py-2.5 font-extrabold text-black transition hover:opacity-95"
                     >
                       Save
                     </button>
 
                     <button
                       onClick={clearVendorOverride}
-                      className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 font-extrabold hover:bg-slate-50 transition"
+                      className="rounded-2xl border border-black/10 bg-white px-5 py-2.5 font-extrabold hover:bg-black/5 transition"
                     >
                       Clear
                     </button>
@@ -679,24 +875,23 @@ export default function AdminPage() {
                 </div>
               ) : null}
 
-              {/* Status + notes */}
               <div className="mt-5 grid gap-3">
                 <div className="grid gap-1">
-                  <label className="text-xs font-semibold text-slate-600">Status</label>
-                  <select
+                  <label className="text-xs font-semibold text-black/60">Status</label>
+                  <BrandSelect<ReviewStatus>
                     value={statusDraft}
-                    onChange={(e) => setStatusDraft(e.target.value as ReviewStatus)}
-                    className="h-11 rounded-2xl border border-[#fcb040] bg-white px-3 font-semibold outline-none"
-                  >
-                    <option value="pending">pending</option>
-                    <option value="reviewed">reviewed</option>
-                    <option value="approved">approved</option>
-                    <option value="rejected">rejected</option>
-                  </select>
+                    onChange={(v) => setStatusDraft(v)}
+                    options={[
+                      { value: "pending", label: "pending" },
+                      { value: "reviewed", label: "reviewed" },
+                      { value: "approved", label: "approved" },
+                      { value: "rejected", label: "rejected" },
+                    ]}
+                  />
                 </div>
 
                 <div className="grid gap-1">
-                  <label className="text-xs font-semibold text-slate-600">Admin notes</label>
+                  <label className="text-xs font-semibold text-black/60">Admin notes</label>
                   <textarea
                     value={notesDraft}
                     onChange={(e) => setNotesDraft(e.target.value)}
@@ -707,40 +902,12 @@ export default function AdminPage() {
 
                 <button
                   onClick={() => saveReview()}
-                  className="rounded-2xl bg-[#fcb040] px-6 py-3 text-center font-extrabold text-slate-900 transition hover:opacity-95 hover:-translate-y-[1px]"
+                  className="rounded-2xl bg-[#fcb040] px-6 py-3 text-center font-extrabold text-black transition hover:opacity-95 hover:-translate-y-[1px]"
                 >
                   Save status + notes
                 </button>
 
-                {selected.role === "vendor" && selected.certificate_signed_url ? (
-                  <a
-                    href={selected.certificate_signed_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-2xl border border-slate-200 bg-white px-6 py-3 text-center font-extrabold hover:bg-slate-50 transition"
-                  >
-                    View certificate
-                  </a>
-                ) : null}
-
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-sm font-extrabold">Answers</div>
-                  <div className="mt-3 grid gap-2">
-                    {Object.entries(selected.answers || {}).map(([k, v]) => (
-                      <div key={k} className="rounded-2xl bg-white p-3 border border-slate-200">
-                        <div className="text-xs font-extrabold text-slate-600">{k}</div>
-                        <div className="mt-1 text-sm font-semibold text-slate-900 break-words">
-                          {Array.isArray(v) ? v.join(", ") : safeStr(v)}
-                        </div>
-                      </div>
-                    ))}
-                    {Object.keys(selected.answers || {}).length === 0 ? (
-                      <div className="text-sm text-slate-600">No answers stored.</div>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="text-xs text-slate-500">
+                <div className="text-xs text-black/50">
                   Created: {new Date(selected.created_at).toLocaleString()}
                   {selected.reviewed_at ? (
                     <>
@@ -752,9 +919,7 @@ export default function AdminPage() {
                 </div>
 
                 {err ? (
-                  <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                    {err}
-                  </div>
+                  <div className="rounded-2xl border border-black/10 bg-black/5 p-3 text-sm text-black">{err}</div>
                 ) : null}
               </div>
             </div>

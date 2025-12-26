@@ -1,4 +1,4 @@
-// src/lib/vendorpriorityscore.ts
+// src/lib/vendorPriorityScore.ts
 // API-safe wrapper: returns a single number (0–10).
 import { vendorPriorityScore } from "./vendorPriority";
 

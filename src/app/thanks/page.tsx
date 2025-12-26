@@ -1,11 +1,34 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { MotionDiv } from "@/app/ui/motion";
 
 export default function ThanksPage() {
+  return (
+    <Suspense fallback={<ThanksFallback />}>
+      <ThanksInner />
+    </Suspense>
+  );
+}
+
+function ThanksFallback() {
+  return (
+    <main className="min-h-screen bg-white text-slate-900">
+      <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
+        <div className="rounded-3xl border border-[#fcb040] bg-white p-5 sm:p-7 shadow-sm">
+          <div className="text-lg font-extrabold">Loading…</div>
+          <div className="mt-2 text-sm text-slate-600">
+            Preparing your referral link.
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function ThanksInner() {
   const sp = useSearchParams();
   const id = sp.get("id") || "";
   const code = sp.get("code") || "";
@@ -14,22 +37,20 @@ export default function ThanksPage() {
   const [baseUrl, setBaseUrl] = useState("");
   const [copied, setCopied] = useState(false);
 
-  // Only used for consumers (Option A)
+  // Only used for consumers
   const [position, setPosition] = useState<number | null>(null);
   const [posLoading, setPosLoading] = useState(false);
 
-  // ✅ Client-only: safe place to access window
   useEffect(() => {
     setBaseUrl(window.location.origin);
   }, []);
 
+  // ✅ Always share the chooser page, not consumer/vendor directly
   const referralLink = useMemo(() => {
     if (!code || !baseUrl) return "";
-    const joinPath = role === "vendor" ? "/join/vendor" : "/join/consumer";
-    return `${baseUrl}${joinPath}?ref=${encodeURIComponent(code)}`;
-  }, [code, baseUrl, role]);
+    return `${baseUrl}/join?ref=${encodeURIComponent(code)}`;
+  }, [code, baseUrl]);
 
-  // ✅ Option A: only fetch/display queue position for consumers
   useEffect(() => {
     if (!id) return;
     if (role !== "consumer") return;
@@ -90,7 +111,6 @@ export default function ThanksPage() {
             We’ll email you with updates and early access.
           </p>
 
-          {/* ✅ Option A: consumers see queue position, vendors do not */}
           {isConsumer ? (
             <div className="mt-5 rounded-3xl border border-[#fcb040] bg-white p-4">
               <div className="text-sm font-extrabold">Your queue position</div>
@@ -110,7 +130,6 @@ export default function ThanksPage() {
             </div>
           )}
 
-          {/* Referral block (only if code exists) */}
           {code ? (
             <div className="mt-6 grid gap-3 rounded-3xl border border-[#fcb040] bg-white p-4">
               <div className="text-sm font-extrabold">Your referral link</div>
@@ -138,7 +157,7 @@ export default function ThanksPage() {
               </div>
 
               <div className="text-xs text-slate-900/60">
-                Share your link with friends. Referrals will help consumers move up the queue.
+                Share your link with friends. Referrals help consumers move up the queue.
               </div>
             </div>
           ) : (
