@@ -6,7 +6,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Lobster } from "next/font/google";
 
 const BRAND_HEX = "#fcb040";
-// Use a stable RGB string so SSR/client match style serialization more consistently
 const BRAND_RGB = "rgb(252, 176, 64)";
 
 // Script font to match the logo wordmark style
@@ -17,12 +16,16 @@ const logoWordmarkFont = Lobster({
 });
 
 /**
- * Desired behavior:
- * - Default: ONLY the logo image shows (no word, no dots on letters).
- * - Hover (desktop): logo dissolves -> dots fly -> word appears -> dots disappear.
+ * Behavior:
+ * - Default: ONLY the logo image shows.
+ * - Hover (desktop): logo dissolves -> dots fly -> word appears.
  * - Leave hover: word disappears -> dots return -> logo returns.
- * - Mobile (no hover): tapping should NOT “stick” the word.
- *   We do a short “preview” animation then return to logo.
+ * - Mobile tap: short preview then return (no “stuck” word).
+ * - On page refresh/mount: auto preview once then return.
+ *
+ * FIX:
+ * - Word exit previously inherited the enter delay, making dots leave earlier.
+ * - Now word exit has NO delay, and particle exit duration matches word exit duration.
  */
 
 type Particle = {
@@ -115,10 +118,29 @@ export default function LogoCinematic({
 }) {
   const [active, setActive] = useState(false);
   const [canHover, setCanHover] = useState(true);
+
   const previewTimer = useRef<number | null>(null);
+  const hasAutoPlayed = useRef(false);
+  const userInteracted = useRef(false);
+
+  // Timing
+  const EASE = [0.16, 1, 0.3, 1] as const;
+
+  const PARTICLE_ENTER_DUR = 0.72;
+  const EXIT_DUR = 0.62; // ✅ shared exit duration (dots + word)
+
+  const WORD_ENTER_DUR = 0.34;
+  const WORD_ENTER_DELAY = 0.62;
+  const WORD_EXIT_DUR = EXIT_DUR; // ✅ match dots
+
+  const clearPreviewTimer = () => {
+    if (previewTimer.current) {
+      window.clearTimeout(previewTimer.current);
+      previewTimer.current = null;
+    }
+  };
 
   useEffect(() => {
-    // If device can’t hover (mobile), don’t allow “sticky” state.
     const mq = window.matchMedia("(hover: hover) and (pointer: fine)");
     const update = () => setCanHover(!!mq.matches);
     update();
@@ -127,15 +149,31 @@ export default function LogoCinematic({
   }, []);
 
   useEffect(() => {
-    return () => {
-      if (previewTimer.current) window.clearTimeout(previewTimer.current);
-    };
+    return () => clearPreviewTimer();
+  }, []);
+
+  // Auto preview once on mount/refresh
+  useEffect(() => {
+    if (hasAutoPlayed.current) return;
+    hasAutoPlayed.current = true;
+
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    if (reduce) return;
+
+    if (userInteracted.current) return;
+
+    setActive(true);
+    clearPreviewTimer();
+
+    previewTimer.current = window.setTimeout(() => {
+      if (!userInteracted.current) setActive(false);
+    }, 1200);
   }, []);
 
   const targets = useMemo(() => makeWordTargets(), []);
 
   const particles = useMemo<Particle[]>(() => {
-    const logoStageW = size; // anchor strictly to logo size
+    const logoStageW = size;
     const logoStageH = size;
 
     const wordStageW = 560;
@@ -166,20 +204,25 @@ export default function LogoCinematic({
   }, [targets, size, wordScale]);
 
   const onEnter = () => {
+    userInteracted.current = true;
+    clearPreviewTimer();
     if (!canHover) return;
     setActive(true);
   };
 
   const onLeave = () => {
+    userInteracted.current = true;
+    clearPreviewTimer();
     if (!canHover) return;
     setActive(false);
   };
 
-  // Mobile: do a short preview and automatically return (no “stuck” word).
   const onTapPreview = () => {
+    userInteracted.current = true;
+    clearPreviewTimer();
     if (canHover) return;
+
     setActive(true);
-    if (previewTimer.current) window.clearTimeout(previewTimer.current);
     previewTimer.current = window.setTimeout(() => setActive(false), 1200);
   };
 
@@ -192,7 +235,7 @@ export default function LogoCinematic({
       role="button"
       aria-label="PeerPlates logo"
     >
-      {/* Anchor = the logo itself (no big white stage). */}
+      {/* Anchor = the logo itself */}
       <div className="relative" style={{ width: size, height: size }}>
         {/* cinematic glow */}
         <motion.div
@@ -228,13 +271,12 @@ export default function LogoCinematic({
           />
         </motion.div>
 
-        {/* Particles originate from logo and fly into word formation */}
+        {/* Particles */}
         <div className="absolute inset-0 pointer-events-none">
           {particles.map((pt) => (
             <motion.span
               key={pt.id}
               className="absolute rounded-full"
-              // ✅ hydration-safe: always use px-strings + rounding
               style={{
                 width: px(pt.r, 0),
                 height: px(pt.r, 0),
@@ -249,9 +291,9 @@ export default function LogoCinematic({
                 scale: active ? 1 : 0.75,
               }}
               transition={{
-                duration: 0.72,
+                duration: active ? PARTICLE_ENTER_DUR : EXIT_DUR, // ✅ exit now slower
                 delay: active ? pt.d : 0,
-                ease: [0.16, 1, 0.3, 1],
+                ease: EASE,
               }}
             />
           ))}
@@ -265,9 +307,28 @@ export default function LogoCinematic({
             <motion.div
               key="word"
               initial={{ opacity: 0, y: 6, filter: "blur(10px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              exit={{ opacity: 0, y: 4, filter: "blur(10px)" }}
-              transition={{ duration: 0.34, delay: 0.62, ease: "easeOut" }}
+              animate={{
+                opacity: 1,
+                y: 0,
+                x: 0,
+                filter: "blur(0px)",
+                transition: {
+                  duration: WORD_ENTER_DUR,
+                  delay: WORD_ENTER_DELAY, // ✅ delay only for ENTER
+                  ease: "easeOut",
+                },
+              }}
+              exit={{
+                opacity: 0,
+                y: 4,
+                x: -14,
+                filter: "blur(12px)",
+                transition: {
+                  duration: WORD_EXIT_DUR,
+                  delay: 0, // ✅ NO exit delay (this was the main problem)
+                  ease: EASE,
+                },
+              }}
               className="flex flex-col"
             >
               <div
