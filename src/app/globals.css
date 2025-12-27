@@ -1,55 +1,34 @@
 @import "tailwindcss";
 
-/* =========================
-   PeerPlates Global Styles
-   Brand: #fcb040 (orange) + white
-   Fonts: Inter (body/ui) + Sora (headings)
-   Clean, readable, minimal
-   ========================= */
-
 :root {
   --brand: #fcb040;
-
   --background: #ffffff;
-  --foreground: #0a0a0a; /* near-black for readable text on white */
+  --foreground: #0a0a0a;
 
-  --card: #ffffff;
-
-  /* subtle neutrals (still “calm”, not colorful) */
   --muted: rgba(10, 10, 10, 0.65);
   --border: rgba(10, 10, 10, 0.12);
-
   --ring: rgba(252, 176, 64, 0.35);
 
-  /* Fonts injected by next/font in layout.tsx:
-     Inter  -> --font-inter
-     Sora   -> --font-sora
-  */
   --font-body: var(--font-inter);
   --font-heading: var(--font-sora);
 }
 
-/* Keep theme mapping (safe even if you don't use it yet) */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
 
-  --font-sans: var(--font-body, ui-sans-serif, system-ui, -apple-system, Segoe UI,
-    Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji");
+  --font-sans: var(--font-body, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica,
+    Arial, "Apple Color Emoji", "Segoe UI Emoji");
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
 }
 
-/* Optional dark mode support */
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0b0b0b;
     --foreground: #ffffff;
-    --card: #0f0f0f;
-
-    --muted: rgba(255, 255, 255, 0.70);
+    --muted: rgba(255, 255, 255, 0.7);
     --border: rgba(255, 255, 255, 0.16);
-
     --ring: rgba(252, 176, 64, 0.45);
   }
 }
@@ -57,7 +36,7 @@
 html,
 body {
   height: 100%;
-  overflow-x: hidden; /* prevents tiny mobile horizontal scroll */
+  overflow-x: hidden;
 }
 
 body {
@@ -69,7 +48,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Headings use Sora automatically */
+/* Headings use Sora */
 h1,
 h2,
 h3,
@@ -79,42 +58,41 @@ h6 {
   font-family: var(--font-heading), system-ui, sans-serif;
 }
 
-/* Optional utility if you want explicit control in components */
 .font-heading {
   font-family: var(--font-heading), system-ui, sans-serif;
 }
 
-/* Links */
 a {
   color: inherit;
   text-decoration: none;
 }
 
-/* Better selection highlight */
 ::selection {
   background: rgba(252, 176, 64, 0.25);
 }
 
-/* Clean brand focus ring */
+/* crisp modern focus ring */
 :where(a, button, input, textarea, select, [role="button"]):focus-visible {
   outline: none;
   box-shadow: 0 0 0 4px var(--ring);
   border-radius: 14px;
 }
 
-/* Buttons */
 button {
   cursor: pointer;
 }
 
-/* Inputs */
 input,
 textarea,
 select {
   color: inherit;
 }
 
-/* Reduce motion for accessibility */
+/* subtle “premium” text spacing */
+* {
+  letter-spacing: -0.01em;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 1ms !important;
