@@ -23,6 +23,7 @@
     "Courier New", monospace;
 }
 
+/* If you later build a real dark theme, keep this. It won't affect bg-white sections. */
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0b0b0b;
@@ -48,7 +49,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Headings use Sora */
 h1,
 h2,
 h3,
@@ -71,7 +71,6 @@ a {
   background: rgba(252, 176, 64, 0.25);
 }
 
-/* crisp modern focus ring */
 :where(a, button, input, textarea, select, [role="button"]):focus-visible {
   outline: none;
   box-shadow: 0 0 0 4px var(--ring);
@@ -88,9 +87,62 @@ select {
   color: inherit;
 }
 
-/* subtle “premium” text spacing */
 * {
   letter-spacing: -0.01em;
+}
+
+/* -------------------------------------------------
+   ✅ Cinematic scrollbar:
+   - very subtle (not screaming “browser”)
+   - orange only on hover/active
+-------------------------------------------------- */
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(252, 176, 64, 0.45) transparent;
+}
+
+/* WebKit */
+::-webkit-scrollbar {
+  width: 10px;   /* keep enough width so it’s usable */
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* “pill thumb”, subtle by default */
+::-webkit-scrollbar-thumb {
+  background-color: rgba(252, 176, 64, 0.28);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+/* pop on hover */
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(252, 176, 64, 0.7);
+}
+
+/* pop more while dragging */
+::-webkit-scrollbar-thumb:active {
+  background-color: rgba(252, 176, 64, 0.95);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+@media (max-width: 640px) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    border-width: 2px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

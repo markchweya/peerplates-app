@@ -1,61 +1,232 @@
 "use client";
 
 import Link from "next/link";
-import { motion, useScroll, useTransform } from "framer-motion";
+import { useEffect, useRef } from "react";
+import {
+  motion,
+  useMotionTemplate,
+  useMotionValue,
+  useSpring,
+} from "framer-motion";
 
 import LogoCinematic from "@/app/ui/LogoCinematic";
 import ScrollShowcase from "@/app/ui/ScrollShowcase";
+import HeroFade from "@/app/ui/HeroFade";
 import { MotionDiv, MotionP, MotionH1 } from "@/app/ui/motion";
 
+function clamp01(n: number) {
+  return Math.max(0, Math.min(1, n));
+}
+
+/**
+ * Cinematic section fade that:
+ * - fades IN quickly as the section enters
+ * - holds while you're "in" the section
+ * - fades OUT only when the section is actually leaving the viewport
+ *
+ * Works even if scroll happens inside a nested scroll container,
+ * because we listen on document scroll in capture mode and use DOM rects.
+ */
+function useCinematicSection(
+  ref: React.RefObject<HTMLElement | null>,
+  opts?: {
+    // enter: section top crosses these viewport fractions (from below)
+    enterStart?: number; // 0..1 (e.g. 0.95)
+    enterEnd?: number; // 0..1 (e.g. 0.72)
+    // exit: section bottom crosses these viewport fractions (moving up)
+    exitStart?: number; // 0..1 (e.g. 0.72)
+    exitEnd?: number; // 0..1 (e.g. 0.22)
+
+    yEnter?: number; // px
+    yExit?: number; // px (usually negative)
+    blurEnter?: number; // px
+    blurExit?: number; // px
+
+    // spring feel
+    stiffness?: number;
+    damping?: number;
+    mass?: number;
+  }
+) {
+  const {
+    enterStart = 0.96,
+    enterEnd = 0.78,
+    exitStart = 0.72,
+    exitEnd = 0.24,
+    yEnter = 16,
+    yExit = -22,
+    blurEnter = 3,
+    blurExit = 8,
+    stiffness = 260,
+    damping = 30,
+    mass = 0.6,
+  } = opts || {};
+
+  const oRaw = useMotionValue(1);
+  const yRaw = useMotionValue(0);
+  const bRaw = useMotionValue(0);
+
+  const o = useSpring(oRaw, { stiffness, damping, mass });
+  const y = useSpring(yRaw, { stiffness, damping, mass });
+  const b = useSpring(bRaw, { stiffness, damping, mass });
+
+  const filter = useMotionTemplate`blur(${b}px)`;
+
+  useEffect(() => {
+    let raf: number | null = null;
+
+    const update = () => {
+      raf = null;
+      const el = ref.current;
+      if (!el) return;
+
+      const rect = el.getBoundingClientRect();
+      const vh = Math.max(1, window.innerHeight);
+
+      // ENTER (top coming up from below)
+      // 0 when top is below enterStart*vh, 1 when top reaches enterEnd*vh
+      const enterDen = Math.max(0.0001, (enterStart - enterEnd) * vh);
+      const enterT = clamp01((enterStart * vh - rect.top) / enterDen);
+
+      // EXIT (bottom moving up past the view)
+      // 0 when bottom is below exitStart*vh, 1 when bottom reaches exitEnd*vh
+      const exitDen = Math.max(0.0001, (exitStart - exitEnd) * vh);
+      const exitT = clamp01((exitStart * vh - rect.bottom) / exitDen);
+
+      // Combine:
+      // - fully visible while in middle
+      // - fade in quickly on enter
+      // - fade out only as it leaves
+      const opacity = enterT * (1 - exitT);
+
+      // Y & blur: subtle, and only really kicks in on enter/exit
+      const yVal = (1 - enterT) * yEnter + exitT * yExit;
+      const blurVal = (1 - enterT) * blurEnter + exitT * blurExit;
+
+      oRaw.set(opacity);
+      yRaw.set(yVal);
+      bRaw.set(blurVal);
+    };
+
+    const schedule = () => {
+      if (raf != null) return;
+      raf = window.requestAnimationFrame(update);
+    };
+
+    // Capture catches nested scrollers too
+    document.addEventListener("scroll", schedule, { capture: true, passive: true });
+    window.addEventListener("resize", schedule, { passive: true });
+
+    // init
+    schedule();
+
+    return () => {
+      document.removeEventListener("scroll", schedule, true);
+      window.removeEventListener("resize", schedule);
+      if (raf != null) window.cancelAnimationFrame(raf);
+    };
+  }, [
+    ref,
+    enterStart,
+    enterEnd,
+    exitStart,
+    exitEnd,
+    yEnter,
+    yExit,
+    blurEnter,
+    blurExit,
+    oRaw,
+    yRaw,
+    bRaw,
+  ]);
+
+  return {
+    opacity: o,
+    y,
+    filter,
+  };
+}
+
 export default function Home() {
-  // Global page scroll
-  const { scrollY } = useScroll();
+  const heroRef = useRef<HTMLElement | null>(null);
+  const showcaseRef = useRef<HTMLElement | null>(null);
 
-  // Fade hero immediately as user scrolls down; fade back in when scrolling up
-  // Tune these numbers if you want faster/slower fading
-  const heroOpacity = useTransform(scrollY, [0, 180, 420], [1, 0.55, 0]);
-  const heroY = useTransform(scrollY, [0, 420], [0, -28]);
-  const heroBlur = useTransform(scrollY, [0, 420], ["blur(0px)", "blur(8px)"]);
+  // HERO: hold longer, fade only when it's truly leaving.
+  const heroFx = useCinematicSection(heroRef, {
+    enterStart: 1.02,
+    enterEnd: 0.88,
+    exitStart: 0.74, // starts fading when hero bottom reaches ~74% of viewport
+    exitEnd: 0.22,   // fully faded near top
+    yEnter: 10,
+    yExit: -24,
+    blurEnter: 0,
+    blurExit: 7,
+    stiffness: 280,
+    damping: 32,
+    mass: 0.6,
+  });
 
-  // Bring the showcase in as hero leaves (subtle)
-  const showcaseOpacity = useTransform(scrollY, [80, 260], [0.92, 1]);
-  const showcaseY = useTransform(scrollY, [80, 260], [10, 0]);
+  // SHOWCASE: snaps in quickly; fades out ONLY after you've actually left the 10/10 sticky section.
+  const showcaseFx = useCinematicSection(showcaseRef, {
+    enterStart: 0.98,
+    enterEnd: 0.80,
+    exitStart: 0.70,
+    exitEnd: 0.20,
+    yEnter: 14,
+    yExit: -18,
+    blurEnter: 2,
+    blurExit: 6,
+    stiffness: 300,
+    damping: 34,
+    mass: 0.58,
+  });
 
   return (
     <main className="min-h-screen bg-white text-slate-900">
-      {/* HERO AREA: fades out/in based on global scroll */}
-      <motion.div style={{ opacity: heroOpacity, y: heroY, filter: heroBlur }}>
-        <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
-          {/* Top bar */}
-          <MotionDiv
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45 }}
-            className="flex items-center justify-between gap-4"
-          >
-            <Link href="/" className="flex items-center">
-              <LogoCinematic size={64} wordScale={1} />
-            </Link>
-
-            <div className="flex items-center gap-3">
-              <Link
-                href="/queue"
-                className="rounded-2xl border border-slate-200 px-5 py-2.5 font-semibold hover:bg-slate-50 transition whitespace-nowrap shadow-sm"
-              >
-                Check queue
+      {/* Header hides/shows based on scroll direction (snappy, cinematic) */}
+      <HeroFade directionDelta={7} className="fixed top-0 left-0 right-0 z-[100]">
+        <div className="border-b border-slate-200/60 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+          <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <Link href="/" className="flex items-center">
+                <LogoCinematic size={56} wordScale={1} />
               </Link>
 
-              <Link
-                href="/join"
-                className="rounded-2xl bg-[#fcb040] px-5 py-2.5 font-extrabold text-slate-900 shadow-sm transition hover:opacity-95 hover:-translate-y-[1px] whitespace-nowrap"
-              >
-                Join waitlist
-              </Link>
+              <div className="flex items-center gap-3">
+                <Link
+                  href="/queue"
+                  className="rounded-2xl border border-slate-200 px-5 py-2.5 font-semibold hover:bg-slate-50 transition whitespace-nowrap shadow-sm"
+                >
+                  Check queue
+                </Link>
+
+                <Link
+                  href="/join"
+                  className="rounded-2xl bg-[#fcb040] px-5 py-2.5 font-extrabold text-slate-900 shadow-sm transition hover:opacity-95 hover:-translate-y-[1px] whitespace-nowrap"
+                >
+                  Join waitlist
+                </Link>
+              </div>
             </div>
-          </MotionDiv>
+          </div>
+        </div>
+      </HeroFade>
 
-          {/* Hero */}
-          <div className="mt-10 sm:mt-14 grid gap-10 lg:grid-cols-2 lg:items-start">
+      {/* Spacer so content doesn't go under fixed header */}
+      <div className="h-[84px]" />
+
+      {/* HERO */}
+      <motion.section
+        ref={heroRef}
+        style={{
+          opacity: heroFx.opacity,
+          y: heroFx.y,
+          filter: heroFx.filter,
+          willChange: "transform, opacity, filter",
+        }}
+      >
+        <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
+          <div className="mt-6 sm:mt-10 grid gap-10 lg:grid-cols-2 lg:items-start">
             <div className="pt-2">
               <MotionDiv
                 initial={{ opacity: 0, y: 16 }}
@@ -157,16 +328,24 @@ export default function Home() {
             </MotionDiv>
           </div>
         </div>
-      </motion.div>
+      </motion.section>
 
-      {/* SHOWCASE: gently fades in */}
-      <motion.div style={{ opacity: showcaseOpacity, y: showcaseY }}>
+      {/* SHOWCASE */}
+      <motion.section
+        ref={showcaseRef}
+        style={{
+          opacity: showcaseFx.opacity,
+          y: showcaseFx.y,
+          filter: showcaseFx.filter,
+          willChange: "transform, opacity, filter",
+        }}
+      >
         <ScrollShowcase
           heading="Product previews"
           subheading="Scroll down — the gallery slides right → left."
           direction="rtl"
-          snap
-          tilt
+          snap={false}
+          tilt={true}
           nav={[
             { label: "Ordering", index: 0 },
             { label: "Storefront", index: 2 },
@@ -247,7 +426,7 @@ export default function Home() {
             },
           ]}
         />
-      </motion.div>
+      </motion.section>
 
       <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mt-10 sm:mt-12 border-t border-slate-200 pt-6 pb-10 text-sm text-slate-500">

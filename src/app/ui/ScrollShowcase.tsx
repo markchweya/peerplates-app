@@ -75,15 +75,14 @@ export default function ScrollShowcase({
   const [sectionPxHeight, setSectionPxHeight] = useState<number | null>(null);
 
   const scrollerRef = useRef<HTMLElement | null>(null);
-
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const progress = useMotionValue(0);
-  const p = useSpring(progress, { stiffness: 140, damping: 26, mass: 0.55 });
+  const p = useSpring(progress, { stiffness: 160, damping: 28, mass: 0.55 });
 
   const xTo = direction === "rtl" ? -travel : travel;
   const xRaw = useTransform(p, [0, 1], [0, xTo]);
-  const x = useSpring(xRaw, { stiffness: 140, damping: 26, mass: 0.55 });
+  const x = useSpring(xRaw, { stiffness: 160, damping: 28, mass: 0.55 });
 
   const startScrollPosRef = useRef(0);
 
@@ -126,6 +125,13 @@ export default function ScrollShowcase({
     }
   }, [items.length, tilt, progress]);
 
+  /**
+   * ✅ CRITICAL FIX:
+   * Your travel was sometimes too small because dist1 could under-report.
+   * So 10/10 was reached early (around gallery8).
+   *
+   * Fix: take the MAX of the strategies, not "prefer dist1".
+   */
   const measureTravel = useCallback(() => {
     const viewport = viewportRef.current;
     const track = trackRef.current;
@@ -147,9 +153,10 @@ export default function ScrollShowcase({
     const total2 = slideW * items.length + gap * Math.max(0, items.length - 1) + padRight;
     const dist2 = Math.max(0, Math.round(total2 - viewportW));
 
+    // fallback estimate
     const dist3 = Math.max(0, Math.round((items.length - 1) * (viewportW * 0.85)));
 
-    const final = dist1 > 0 ? dist1 : dist2 > 0 ? dist2 : dist3;
+    const final = Math.max(dist1, dist2, dist3);
     setTravel(final);
 
     const vh = getViewportH();
@@ -192,7 +199,7 @@ export default function ScrollShowcase({
   }, [applyTilt, getScrollTop, items.length, progress, travel]);
 
   // --------------------
-  // SNAP (fixed: no lock)
+  // SNAP (optional)
   // --------------------
   const snapTimerRef = useRef<number | null>(null);
   const isSnappingRef = useRef(false);
@@ -205,9 +212,7 @@ export default function ScrollShowcase({
     const now = getScrollTop();
     const start = startScrollPosRef.current;
 
-    // Only snap WHILE INSIDE the sticky section range
-    // and avoid snapping near edges so user can leave normally.
-    const edgePadding = 28; // px safe zone at start/end
+    const edgePadding = 28;
     const inRange = now >= start + edgePadding && now <= start + travel - edgePadding;
 
     return inRange;
@@ -234,6 +239,7 @@ export default function ScrollShowcase({
   const scheduleSnap = useCallback(() => {
     if (!snap) return;
     if (isSnappingRef.current) return;
+
     if (!shouldAllowSnap()) {
       if (snapTimerRef.current) window.clearTimeout(snapTimerRef.current);
       snapTimerRef.current = null;
@@ -355,7 +361,7 @@ export default function ScrollShowcase({
           <div className="absolute -bottom-28 right-0 h-80 w-80 rounded-full bg-slate-200/50 blur-3xl opacity-40" />
         </div>
 
-        {/* header (NO absolute nav -> no overlap) */}
+        {/* header */}
         <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-4 sm:px-6 lg:px-8 pt-14 sm:pt-16">
           <div className="flex flex-col gap-5">
             <div className="flex items-end justify-between gap-6">
