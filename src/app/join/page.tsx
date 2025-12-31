@@ -7,6 +7,48 @@ export const metadata = {
   title: "Join Waitlist | PeerPlates",
 };
 
+function ConsumerIcon({ className = "" }: { className?: string }) {
+  // simple “person” icon (no chef hat)
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <path
+        d="M12 12.9c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4Z"
+        fill="currentColor"
+      />
+      <path
+        d="M12 14.2c-4.2 0-7.6 2.6-7.6 5.9V21h15.2v-.9c0-3.3-3.4-5.9-7.6-5.9Z"
+        fill="currentColor"
+        opacity="0.95"
+      />
+    </svg>
+  );
+}
+
+function VendorIcon({ className = "" }: { className?: string }) {
+  // simple “chef hat + person” icon
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <path
+        d="M7.4 9.2C7 6.7 8.9 5 11.5 5c2.7 0 4.5 1.7 4.1 4.2.5-.1 1-.1 1.5.1 1.1.5 1.6 1.8 1.1 2.9-.4 1-1.4 1.6-2.5 1.4H7.3c-1.1.2-2.1-.4-2.5-1.4-.5-1.1 0-2.4 1.1-2.9.5-.2 1-.2 1.5-.1Z"
+        fill="currentColor"
+        opacity="0.95"
+      />
+      <path
+        d="M12 14.1c-4.1 0-7.4 2.5-7.4 5.7V21h14.8v-1.2c0-3.2-3.3-5.7-7.4-5.7Z"
+        fill="currentColor"
+        opacity="0.95"
+      />
+      <path
+        d="M12 13.4c1.8 0 3.2-1.4 3.2-3.1S13.8 7.2 12 7.2 8.8 8.6 8.8 10.3s1.4 3.1 3.2 3.1Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+const ORANGE = "#fcb040";
+const BROWN = "#8a6b43";
+
 export default async function JoinPage({
   searchParams,
 }: {
@@ -49,9 +91,7 @@ export default async function JoinPage({
             Eat better.{" "}
             <span
               className="bg-clip-text text-transparent"
-              style={{
-                backgroundImage: "linear-gradient(90deg, #fcb040, #8a6b43)",
-              }}
+              style={{ backgroundImage: `linear-gradient(90deg, ${ORANGE}, ${BROWN})` }}
             >
               Join the waitlist.
             </span>
@@ -70,6 +110,7 @@ export default async function JoinPage({
           ) : null}
 
           <div className="mt-10 grid gap-5 md:grid-cols-2">
+            {/* Consumer */}
             <Link
               href={consumerHref}
               className="group rounded-[34px] border border-[#fcb040]/55 bg-white p-7 shadow-sm transition hover:-translate-y-[2px]"
@@ -77,9 +118,10 @@ export default async function JoinPage({
             >
               <div className="flex items-center gap-4">
                 <div className="h-12 w-12 rounded-2xl border border-slate-200 bg-white flex items-center justify-center shadow-sm">
-                  <span className="h-3 w-3 rounded-full bg-[#fcb040]" />
+                  <ConsumerIcon className="h-7 w-7 text-slate-900" />
                 </div>
-                <div>
+
+                <div className="min-w-0">
                   <div className="text-xl font-extrabold">Consumer</div>
                   <div className="mt-1 text-slate-900/70 font-semibold">
                     Buy food • Refer friends • Move up
@@ -90,6 +132,7 @@ export default async function JoinPage({
               <div className="mt-6 h-[2px] w-36 bg-slate-200 group-hover:w-44 transition-all" />
             </Link>
 
+            {/* Vendor */}
             <Link
               href={vendorHref}
               className="group rounded-[34px] border border-[#fcb040]/55 bg-white p-7 shadow-sm transition hover:-translate-y-[2px]"
@@ -97,9 +140,10 @@ export default async function JoinPage({
             >
               <div className="flex items-center gap-4">
                 <div className="h-12 w-12 rounded-2xl border border-slate-200 bg-white flex items-center justify-center shadow-sm">
-                  <span className="h-3 w-3 rounded-full bg-[#8a6b43]" />
+                  <VendorIcon className="h-7 w-7 text-slate-900" />
                 </div>
-                <div>
+
+                <div className="min-w-0">
                   <div className="text-xl font-extrabold">Vendor</div>
                   <div className="mt-1 text-slate-900/70 font-semibold">
                     Sell food • Review • Queue position
