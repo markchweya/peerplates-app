@@ -1,9 +1,14 @@
+// src/app/thanks/page.tsx
 "use client";
 
 import Link from "next/link";
+import LogoCinematic from "@/app/ui/LogoCinematic";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { MotionDiv } from "@/app/ui/motion";
+
+const BRAND_ORANGE = "#fcb040";
+const BRAND_BROWN = "#8a6b43";
 
 export default function ThanksPage() {
   return (
@@ -19,12 +24,45 @@ function ThanksFallback() {
       <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
         <div className="rounded-3xl border border-[#fcb040] bg-white p-5 sm:p-7 shadow-sm">
           <div className="text-lg font-extrabold">Loading…</div>
-          <div className="mt-2 text-sm text-slate-600">
-            Preparing your referral link.
-          </div>
+          <div className="mt-2 text-sm text-slate-600">Preparing your referral link.</div>
         </div>
       </div>
     </main>
+  );
+}
+
+function CheckIcon({ className = "" }: { className?: string }) {
+  // modern checkmark (NOT emoji)
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <path
+        d="M20 6.8 9.6 17.2 4 11.6"
+        stroke="currentColor"
+        strokeWidth="2.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function StatusPill() {
+  return (
+    <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-sm font-extrabold text-slate-900 shadow-sm backdrop-blur">
+      <span className="h-2.5 w-2.5 rounded-full" style={{ background: BRAND_ORANGE }} />
+      <span>You’re on the waitlist</span>
+      <span
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full"
+        style={{
+          background: "rgba(252,176,64,0.18)",
+          boxShadow: "0 0 0 1px rgba(252,176,64,0.35), 0 12px 30px rgba(252,176,64,0.22)",
+          color: "#0f172a",
+        }}
+        aria-hidden="true"
+      >
+        <CheckIcon className="h-4 w-4" />
+      </span>
+    </div>
   );
 }
 
@@ -80,6 +118,19 @@ function ThanksInner() {
 
   return (
     <main className="min-h-screen bg-white text-slate-900">
+      {/* soft cinematic background */}
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-white via-slate-50/70 to-white" />
+        <div
+          className="absolute -top-28 -left-28 h-[520px] w-[520px] rounded-full blur-3xl opacity-25"
+          style={{ background: "rgba(252,176,64,0.35)" }}
+        />
+        <div
+          className="absolute -bottom-40 -right-40 h-[640px] w-[640px] rounded-full blur-3xl opacity-25"
+          style={{ background: "rgba(138,107,67,0.22)" }}
+        />
+      </div>
+
       <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
         <MotionDiv
           initial={{ opacity: 0, y: -10 }}
@@ -87,55 +138,60 @@ function ThanksInner() {
           transition={{ duration: 0.45 }}
           className="flex items-center justify-between gap-4"
         >
-          <Link href="/" className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-[#fcb040]" />
-            <div className="text-lg font-semibold tracking-tight">PeerPlates</div>
+          <Link href="/" className="flex items-center">
+            <LogoCinematic size={56} wordScale={1} />
           </Link>
 
-          <div className="text-sm font-semibold text-slate-900 whitespace-nowrap">
-            You’re on the waitlist ✅
-          </div>
+          {/* ✅ no emoji check anymore */}
+          <StatusPill />
         </MotionDiv>
 
         <MotionDiv
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55, delay: 0.08 }}
-          className="mt-8 sm:mt-10 rounded-3xl border border-[#fcb040] bg-white p-5 sm:p-7 shadow-sm"
+          className="mt-8 sm:mt-10 rounded-[36px] border border-[#fcb040]/60 bg-white/85 backdrop-blur p-6 sm:p-8 shadow-sm"
+          style={{ boxShadow: "0 22px 70px rgba(2,6,23,0.10)" }}
         >
-          <h1 className="text-[clamp(1.8rem,3.5vw,2.2rem)] font-extrabold tracking-tight leading-tight">
-            Thanks for joining 🎉
+          <h1 className="text-[clamp(2.0rem,4vw,2.8rem)] font-extrabold tracking-tight leading-[0.95]">
+            Thanks for joining{" "}
+            <span
+              className="bg-clip-text text-transparent"
+              style={{ backgroundImage: `linear-gradient(90deg, ${BRAND_ORANGE}, ${BRAND_BROWN})` }}
+            >
+              PeerPlates.
+            </span>
           </h1>
 
-          <p className="mt-2 text-slate-900/70 text-sm sm:text-base">
+          <p className="mt-3 text-slate-900/70 text-sm sm:text-base font-semibold">
             We’ll email you with updates and early access.
           </p>
 
           {isConsumer ? (
-            <div className="mt-5 rounded-3xl border border-[#fcb040] bg-white p-4">
+            <div className="mt-6 rounded-3xl border border-[#fcb040]/55 bg-white p-5">
               <div className="text-sm font-extrabold">Your queue position</div>
-              <div className="mt-1 text-2xl font-extrabold">
-                {id ? (posLoading ? "Loading..." : position ? `#${position}` : "—") : "—"}
+              <div className="mt-1 text-3xl font-extrabold tracking-tight">
+                {id ? (posLoading ? "Loading…" : position ? `#${position}` : "—") : "—"}
               </div>
               <div className="mt-1 text-xs text-slate-900/60">
                 MVP estimate based on signup time and role.
               </div>
             </div>
           ) : (
-            <div className="mt-5 rounded-3xl border border-[#fcb040] bg-white p-4">
+            <div className="mt-6 rounded-3xl border border-[#fcb040]/55 bg-white p-5">
               <div className="text-sm font-extrabold">Vendor review</div>
-              <div className="mt-1 text-sm text-slate-900/70">
+              <div className="mt-2 text-sm text-slate-900/70 font-semibold leading-relaxed">
                 We’ll review your application and email you as soon as you’re approved for early access.
               </div>
             </div>
           )}
 
           {code ? (
-            <div className="mt-6 grid gap-3 rounded-3xl border border-[#fcb040] bg-white p-4">
+            <div className="mt-7 grid gap-3 rounded-3xl border border-[#fcb040]/55 bg-white p-5">
               <div className="text-sm font-extrabold">Your referral link</div>
 
-              <div className="rounded-2xl border border-[#fcb040] bg-white px-4 py-3 font-mono text-sm break-all">
-                {referralLink || "Generating link..."}
+              <div className="rounded-2xl border border-[#fcb040]/60 bg-white px-4 py-3 font-mono text-sm break-all">
+                {referralLink || "Generating link…"}
               </div>
 
               <div className="flex flex-col sm:flex-row gap-3">
@@ -150,7 +206,7 @@ function ThanksInner() {
 
                 <Link
                   href="/"
-                  className="rounded-2xl border border-[#fcb040] bg-white px-6 py-3 text-center font-extrabold text-slate-900 transition hover:-translate-y-[1px]"
+                  className="rounded-2xl border border-[#fcb040]/60 bg-white px-6 py-3 text-center font-extrabold text-slate-900 transition hover:-translate-y-[1px]"
                 >
                   Back to home
                 </Link>
@@ -161,7 +217,7 @@ function ThanksInner() {
               </div>
             </div>
           ) : (
-            <div className="mt-6 rounded-3xl border border-[#fcb040] bg-white p-4">
+            <div className="mt-7 rounded-3xl border border-[#fcb040]/55 bg-white p-5">
               <div className="text-sm font-semibold">Your signup is saved.</div>
               <div className="mt-1 text-sm text-slate-900/70">
                 (Referral code missing from the URL — that’s okay. We can still look you up by email.)
