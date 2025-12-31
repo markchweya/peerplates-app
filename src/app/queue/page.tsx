@@ -2,12 +2,9 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useMemo, useState } from "react";
 import { MotionDiv } from "@/app/ui/motion";
 import LogoCinematic from "@/app/ui/LogoCinematic";
-
-const BRAND = "#fcb040";
 
 type QueueResult = {
   email: string;
@@ -19,13 +16,6 @@ type QueueResult = {
   referral_code: string | null;
   referral_link: string | null;
 };
-
-function cleanCode(v: string) {
-  return String(v || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "");
-}
 
 function formatStatus(s: QueueResult["review_status"]) {
   if (s === "approved") return "Approved";
@@ -47,56 +37,8 @@ const subtleBtn =
   "hover:bg-black/5 hover:-translate-y-[1px] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0";
 
 export default function QueuePage() {
-  // ✅ Fix for Vercel prerender error: useSearchParams must be inside Suspense
-  return (
-    <Suspense fallback={<QueueFallback />}>
-      <QueueInner />
-    </Suspense>
-  );
-}
-
-function QueueFallback() {
-  return (
-    <main className="min-h-screen bg-white text-black">
-      {/* soft cinematic bg */}
-      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-white via-slate-50/60 to-white" />
-        <div
-          className="absolute -left-40 top-10 h-[520px] w-[520px] rounded-full blur-3xl opacity-25"
-          style={{ background: "rgba(252,176,64,0.30)" }}
-        />
-        <div
-          className="absolute -right-44 bottom-[-120px] h-[560px] w-[560px] rounded-full blur-3xl opacity-25"
-          style={{ background: "rgba(138,107,67,0.18)" }}
-        />
-      </div>
-
-      <div className="mx-auto w-full max-w-xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
-        <div className="flex items-center justify-between gap-4">
-          <Link href="/" className="flex items-center">
-            <LogoCinematic size={56} wordScale={1} />
-          </Link>
-          <div className="text-sm text-black/60 whitespace-nowrap">Queue</div>
-        </div>
-
-        <div
-          className="mt-8 rounded-3xl border border-black/10 bg-white/90 backdrop-blur p-6 shadow-sm"
-          style={{ boxShadow: "0 18px 60px rgba(2,6,23,0.08)" }}
-        >
-          <div className="text-xl font-extrabold tracking-tight">Loading…</div>
-          <div className="mt-2 text-sm text-black/60">Preparing your queue checker.</div>
-        </div>
-      </div>
-    </main>
-  );
-}
-
-function QueueInner() {
-  const sp = useSearchParams();
-  const codeFromUrl = cleanCode(sp.get("code") || "");
-
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState(codeFromUrl);
+  const [code, setCode] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -105,27 +47,36 @@ function QueueInner() {
   const [result, setResult] = useState<QueueResult | null>(null);
 
   const canVerify = useMemo(() => {
-    const c = cleanCode(code);
-    return c.length >= 6;
-  }, [code]);
+    const em = String(email || "").trim();
+    const token = String(code || "").trim();
+    return !!em && token.length >= 6;
+  }, [email, code]);
 
-  const fetchStatus = async (overrideCode?: string) => {
+  const verifyCode = async () => {
     setErr("");
     setInfo("");
     setLoading(true);
     setResult(null);
 
     try {
-      const cleaned = cleanCode(overrideCode ?? code);
-      if (!cleaned || cleaned.length < 6) throw new Error("Please enter your 6‑digit code.");
+      const em = String(email || "").trim().toLowerCase();
+      const token = String(code || "").trim();
 
-      const res = await fetch(`/api/queue-status?code=${encodeURIComponent(cleaned)}`);
+      if (!em) throw new Error("Please enter your email.");
+      if (!token || token.length < 6) throw new Error("Please enter the 6‑digit code.");
+
+      const res = await fetch("/api/queue-verify-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: em, token }),
+      });
+
       const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload?.error || "Failed to fetch queue status.");
+      if (!res.ok) throw new Error(payload?.error || "Failed to verify code.");
 
       setResult(payload as QueueResult);
     } catch (e: any) {
-      setErr(e?.message || "Failed to fetch status.");
+      setErr(e?.message || "Failed to verify.");
     } finally {
       setLoading(false);
     }
@@ -137,10 +88,9 @@ function QueueInner() {
     setSending(true);
 
     try {
-      const em = String(email || "").trim();
+      const em = String(email || "").trim().toLowerCase();
       if (!em) throw new Error("Please enter your email to request a new code.");
 
-      // NOTE: make sure this route exists in your app
       const res = await fetch("/api/queue-send-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -157,15 +107,6 @@ function QueueInner() {
       setSending(false);
     }
   };
-
-  // Auto-load if link had ?code=
-  useEffect(() => {
-    if (codeFromUrl) {
-      setCode(codeFromUrl);
-      fetchStatus(codeFromUrl);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [codeFromUrl]);
 
   return (
     <main className="min-h-screen bg-white text-black">
@@ -257,7 +198,7 @@ function QueueInner() {
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <button className={primaryBtn} onClick={() => fetchStatus()} disabled={loading || !canVerify}>
+                <button className={primaryBtn} onClick={verifyCode} disabled={loading || !canVerify}>
                   {loading ? "Verifying…" : "Verify"}
                 </button>
 
@@ -267,7 +208,7 @@ function QueueInner() {
               </div>
 
               <div className="text-xs text-black/50">
-                Tip: you can either click the email button (magic link) or type the code here.
+                Tip: request a code, then paste it here.
               </div>
             </div>
           ) : (
@@ -303,12 +244,14 @@ function QueueInner() {
                     )}
                   </div>
 
-                  <div className="text-xs text-black/50">Joined: {new Date(result.created_at).toLocaleString()}</div>
+                  <div className="text-xs text-black/50">
+                    Joined: {new Date(result.created_at).toLocaleString()}
+                  </div>
                 </div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <button className={primaryBtn} onClick={() => fetchStatus()} disabled={loading}>
+                <button className={primaryBtn} onClick={verifyCode} disabled={loading}>
                   {loading ? "Refreshing…" : "Refresh"}
                 </button>
 
@@ -318,6 +261,7 @@ function QueueInner() {
                     setResult(null);
                     setErr("");
                     setInfo("");
+                    setCode("");
                   }}
                   disabled={loading}
                 >
