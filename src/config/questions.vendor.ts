@@ -14,11 +14,7 @@ export const vendorQuestions = [
     label: "Which university?",
     required: true,
     type: "select",
-    options: [
-      "University of Nottingham (UoN)",
-      "Nottingham Trent University (NTU)",
-      "Other",
-    ],
+    options: ["University of Nottingham (UoN)", "Nottingham Trent University (NTU)", "Other"],
   },
   {
     key: "currently_sell",
@@ -51,13 +47,16 @@ export const vendorQuestions = [
       "None of the above",
     ],
   },
+
+  // ✅ now handled as “Closest campus” + dropdown minutes in JoinForm (same key)
   {
     key: "campus_bus",
-    label: "Closest campus + minutes by bus",
+    label: "Closest campus",
     required: true,
     type: "text",
-    placeholder: "e.g. Jubilee Campus, 20 minutes",
+    placeholder: "e.g. Jubilee Campus",
   },
+
   {
     key: "compliance_readiness",
     label: "Compliance readiness (tick all that apply)",
@@ -85,13 +84,6 @@ export const vendorQuestions = [
     type: "select",
     options: ["£3–£5", "£5–£7", "£7–£10", "£10–£15", "£15+"],
   },
-  {
-    key: "certificate_upload",
-    label: "Upload certificate (optional)",
-    required: false,
-    type: "file",
-    accept: [".pdf", ".jpg", ".jpeg", ".png"],
-    helpText: "Optional — upload now or later. This helps us onboard you faster.",
-    uploadKey: "certificate_upload",
-  },
+
+  // ❌ removed certificate_upload
 ] satisfies Question[];

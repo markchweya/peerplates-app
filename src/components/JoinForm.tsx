@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MotionDiv } from "@/app/ui/motion";
 import SelectField from "@/components/fields/SelectField";
+import LogoCinematic from "@/app/ui/LogoCinematic";
 
 type QuestionType =
   | "text"
@@ -26,7 +27,7 @@ export type Question = {
   options?: string[];
 
   // checkbox groups
-  maxSelections?: number; // e.g. 3 for “Top 3 cuisines”
+  maxSelections?: number;
 
   // file questions
   accept?: string[];
@@ -52,6 +53,42 @@ const BRAND = "#fcb040";
 const PRIVACY_URL = "/privacy";
 const TERMS_URL = "/terms";
 
+// minutes dropdown options
+const BUS_MINUTE_OPTIONS: string[] = [
+  ...Array.from({ length: 59 }, (_, i) => `${i + 1} min`),
+  "1 hour",
+  "More than 1 hour",
+];
+
+function splitCampusBus(value: string) {
+  const raw = String(value || "").trim();
+  if (!raw) return { campus: "", minutes: "" };
+
+  // expected "Campus, 20 min"
+  const parts = raw.split(",").map((p) => p.trim());
+  if (parts.length >= 2) {
+    const campus = parts.slice(0, -1).join(", ").trim();
+    const minutes = parts[parts.length - 1].trim();
+    return { campus, minutes };
+  }
+
+  // fallback if old format was "Jubilee Campus, 20 minutes"
+  const m = raw.match(/^(.*?)(?:,|\s)\s*(\d+\s*(?:min|mins|minutes)|1\s*hour|more\s*than\s*1\s*hour)$/i);
+  if (m) return { campus: m[1].trim(), minutes: m[2].trim() };
+
+  return { campus: raw, minutes: "" };
+}
+
+function composeCampusBus(campus: string, minutes: string) {
+  const c = String(campus || "").trim();
+  const m = String(minutes || "").trim();
+
+  if (!c && !m) return "";
+  if (c && !m) return c; // temporary while user picks minutes
+  if (!c && m) return m; // temporary while user types campus
+  return `${c}, ${m}`;
+}
+
 export default function JoinForm({ role, title, subtitle, questions }: Props) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -66,7 +103,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
   const [marketingConsent, setMarketingConsent] = useState(false);
 
   // Bot protection (honeypot)
-  const [hp, setHp] = useState(""); // hidden input, must remain empty
+  const [hp, setHp] = useState("");
 
   const initialAnswers = useMemo<AnswersState>(() => {
     const obj: AnswersState = {};
@@ -98,9 +135,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
 
   // Hide “university” unless student === Yes
   const shouldHideQuestion = (q: Question) => {
-    if (q.key === "university") {
-      return !isStudentYes;
-    }
+    if (q.key === "university") return !isStudentYes;
     return false;
   };
 
@@ -131,7 +166,6 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
       ? current.filter((x) => x !== option)
       : [...current, option];
 
-    // handle None / None of the above
     if (hasNone) {
       if (isNone && (next.includes("None") || next.includes("None of the above"))) {
         next = [option];
@@ -140,32 +174,33 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
       }
     }
 
-    // max selections (e.g. Top 3 cuisines)
     if (typeof maxSelections === "number" && maxSelections > 0) {
       const clean = next.filter((x) => x !== "None" && x !== "None of the above");
-      if (clean.length > maxSelections) {
-        // do not allow adding beyond max
-        return;
-      }
+      if (clean.length > maxSelections) return;
     }
 
     setAnswer(key, next);
   };
 
   const validate = () => {
-    // bot
     if (hp.trim()) return "Submission blocked (bot detected).";
 
     if (!fullName.trim()) return "Please enter your full name.";
     if (!email.trim()) return "Please enter your email.";
-
-    // privacy required
     if (!acceptedPrivacy) return "Please accept the Privacy Policy / Terms to continue.";
 
-    // required questions (except hidden ones)
     for (const q of questions) {
       if (shouldHideQuestion(q)) continue;
       if (!q.required) continue;
+
+      // special validation for split campus_bus (still stored as one string)
+      if (q.key === "campus_bus") {
+        const raw = String(answers["campus_bus"] || "");
+        const { campus, minutes } = splitCampusBus(raw);
+        if (!campus.trim()) return "Please enter: Closest campus";
+        if (!minutes.trim()) return "Please select: Minutes by bus";
+        continue;
+      }
 
       if (q.type === "file") {
         const uploadKey = q.uploadKey || q.key;
@@ -177,7 +212,6 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
       const v = answers[q.key];
       if (isEmpty(v)) return `Please answer: ${q.label}`;
 
-      // max selection enforcement (client-side)
       if (q.type === "checkboxes" && typeof q.maxSelections === "number") {
         const arr = Array.isArray(v) ? v : [];
         const clean = arr.filter((x) => x !== "None" && x !== "None of the above");
@@ -185,13 +219,6 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
           return `Please select up to ${q.maxSelections}: ${q.label}`;
         }
       }
-    }
-
-    // student/university consistency
-    if (!isStudentYes) {
-      // ensure university is empty if not student
-      // (we already clear it in an effect, this is just extra safety)
-      // no error here
     }
 
     return "";
@@ -221,7 +248,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
         answers,
         accepted_privacy: acceptedPrivacy,
         marketing_consent: marketingConsent,
-        hp, // honeypot
+        hp,
       };
 
       let res: Response;
@@ -285,8 +312,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
           className="flex items-center justify-between gap-4"
         >
           <Link href="/" className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl" style={{ background: BRAND }} />
-            <div className="text-lg font-semibold tracking-tight">PeerPlates</div>
+            <LogoCinematic size={44} wordScale={0.95} />
           </Link>
 
           <div className="text-sm text-slate-900 font-semibold whitespace-nowrap">
@@ -326,7 +352,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   className={inputBase}
-                  placeholder="e.g. Christine Gesare"
+                  placeholder="e.g. John Doe"
                   autoComplete="name"
                 />
               </div>
@@ -350,7 +376,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 className={inputBase}
-                placeholder="+44… / +254…"
+                placeholder="+44..."
                 type="tel"
                 autoComplete="tel"
               />
@@ -362,6 +388,53 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
 
                 const t = q.type || "text";
                 const val = answers[q.key];
+
+                // ✅ SPECIAL: Closest campus + minutes dropdown (same line)
+                if (q.key === "campus_bus") {
+                  const raw = String(val ?? "");
+                  const { campus, minutes } = splitCampusBus(raw);
+
+                  return (
+                    <div key={q.key} className="grid gap-2">
+                      <label className="text-sm font-semibold">
+                        Closest campus &amp; travel time by bus {q.required ? "*" : ""}
+                      </label>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="grid gap-2">
+                          <label className="text-sm font-semibold">Closest campus *</label>
+                          <input
+                            value={campus}
+                            onChange={(e) => {
+                              const next = composeCampusBus(e.target.value, minutes);
+                              setAnswer("campus_bus", next);
+                            }}
+                            className={inputBase}
+                            placeholder="e.g. Jubilee Campus"
+                          />
+                        </div>
+
+                        <div className="grid gap-2">
+                          <SelectField
+                            label="Minutes by bus"
+                            required
+                            value={minutes}
+                            onChange={(v) => {
+                              const next = composeCampusBus(campus, v);
+                              setAnswer("campus_bus", next);
+                            }}
+                            options={BUS_MINUTE_OPTIONS}
+                            placeholder="Select…"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="text-xs text-slate-900/60">
+                        Enter your closest campus, then choose your travel time.
+                      </div>
+                    </div>
+                  );
+                }
 
                 if (t === "select") {
                   return (
@@ -385,9 +458,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
                       <label className="text-sm font-semibold">
                         {q.label} {q.required ? "*" : ""}
                         {typeof q.maxSelections === "number" ? (
-                          <span className="ml-2 text-xs text-slate-500">
-                            (max {q.maxSelections})
-                          </span>
+                          <span className="ml-2 text-xs text-slate-500">(max {q.maxSelections})</span>
                         ) : null}
                       </label>
 
@@ -419,9 +490,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
                             </button>
                           );
                         })}
-                        <div className="text-xs text-slate-900/60">
-                          You can select multiple options.
-                        </div>
+                        <div className="text-xs text-slate-900/60">You can select multiple options.</div>
                       </div>
                     </div>
                   );
@@ -550,9 +619,7 @@ export default function JoinForm({ role, title, subtitle, questions }: Props) {
               </Link>
             </div>
 
-            <div className="text-xs text-slate-900/60">
-              By submitting, you agree to receive updates about early access.
-            </div>
+          
           </form>
         </MotionDiv>
       </div>
