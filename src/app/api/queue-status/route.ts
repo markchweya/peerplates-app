@@ -1,11 +1,11 @@
-// src/app/api/queue-status/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://peerplates.vercel.app";
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
 type Role = "consumer" | "vendor";
 type ReviewStatus = "pending" | "reviewed" | "approved" | "rejected";
@@ -23,12 +23,17 @@ type WaitlistEntry = {
 };
 
 function supabaseAdmin() {
-  if (!SUPABASE_URL || !SERVICE_KEY) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+  if (!SUPABASE_URL || !SERVICE_KEY) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+  }
   return createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 }
 
 function cleanCode(v: string) {
-  return String(v || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return String(v || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
 }
 
 export async function GET(req: NextRequest) {
@@ -111,7 +116,10 @@ export async function GET(req: NextRequest) {
       position = idx >= 0 ? idx + 1 : null;
     }
 
-    const score = entry.role === "vendor" ? Number(entry.vendor_priority_score ?? 0) : Number(entry.referral_points ?? 0);
+    const score =
+      entry.role === "vendor"
+        ? Number(entry.vendor_priority_score ?? 0)
+        : Number(entry.referral_points ?? 0);
 
     const referral_code = entry.referral_code || null;
     const referral_link = referral_code ? `${SITE_URL}/join?ref=${encodeURIComponent(referral_code)}` : null;
