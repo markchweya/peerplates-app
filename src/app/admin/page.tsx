@@ -86,32 +86,6 @@ const controlBase =
   "h-10 w-full rounded-2xl border border-[#fcb040] bg-white px-3 font-semibold text-black outline-none " +
   "focus:ring-4 focus:ring-[rgba(252,176,64,0.25)]";
 
-function AnswersCell({ answers }: { answers: Record<string, any> }) {
-  const entries = Object.entries(answers || {})
-    .filter(([_, v]) => normalizeAnswerValue(v).trim().length > 0)
-    .sort(([a], [b]) => a.localeCompare(b));
-
-  if (entries.length === 0) return <span className="text-black/40">—</span>;
-
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {entries.map(([k, v]) => (
-        <span
-          key={k}
-          className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2 py-1 text-xs"
-          title={`${k}: ${normalizeAnswerValue(v)}`}
-        >
-          <span className="font-semibold text-black/60">{k}</span>
-          <span className="text-black/30">•</span>
-          <span className="font-semibold text-black max-w-[240px] truncate">
-            {normalizeAnswerValue(v)}
-          </span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
 /**
  * Custom dropdown (so we avoid the OS blue highlight from native <select>)
  */
@@ -149,10 +123,7 @@ function BrandSelect<T extends string>({
         ref={btnRef}
         type="button"
         onClick={() => setOpen((x) => !x)}
-        className={
-          controlBase +
-          " flex items-center justify-between gap-2 text-left pr-10"
-        }
+        className={controlBase + " flex items-center justify-between gap-2 text-left pr-10"}
         aria-haspopup="listbox"
         aria-expanded={open}
       >
@@ -160,7 +131,10 @@ function BrandSelect<T extends string>({
         <svg
           aria-hidden="true"
           viewBox="0 0 20 20"
-          className={"absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/60 transition " + (open ? "rotate-180" : "")}
+          className={
+            "absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/60 transition " +
+            (open ? "rotate-180" : "")
+          }
           fill="currentColor"
         >
           <path d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4z" />
@@ -257,6 +231,21 @@ export default function AdminPage() {
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [rows]);
+
+  // ✅ Build dynamic answer columns from all rows (so Answers become table columns)
+  const answerKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      const a = r.answers || {};
+      for (const k of Object.keys(a)) {
+        const key = String(k || "").trim();
+        if (key) set.add(key);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
+  const tableColCount = 10 /* fixed cols */ + answerKeys.length + 1 /* Action */;
 
   const queryString = useMemo(() => {
     const sp = new URLSearchParams();
@@ -480,9 +469,7 @@ export default function AdminPage() {
             </div>
 
             {err ? (
-              <div className="mt-4 rounded-2xl border border-black/10 bg-black/5 p-3 text-sm text-black">
-                {err}
-              </div>
+              <div className="mt-4 rounded-2xl border border-black/10 bg-black/5 p-3 text-sm text-black">{err}</div>
             ) : null}
 
             <button
@@ -640,24 +627,30 @@ export default function AdminPage() {
 
           {/* Table */}
           <div className="mt-4 overflow-auto rounded-2xl border border-black/10">
-            <table className="w-full text-sm table-fixed">
+            <table className="w-full text-sm table-auto min-w-max">
               <thead className="bg-black/5 text-black/80 sticky top-0 z-10">
                 <tr>
-                  <th className="p-3 text-left w-[90px]">Role</th>
-                  <th className="p-3 text-left w-[160px]">Name</th>
-                  <th className="p-3 text-left w-[220px]">Email</th>
+                  <th className="p-3 text-left whitespace-nowrap">Role</th>
+                  <th className="p-3 text-left whitespace-nowrap">Name</th>
+                  <th className="p-3 text-left whitespace-nowrap">Email</th>
 
-                  <th className="p-3 text-left w-[90px]">Bus</th>
-                  <th className="p-3 text-left w-[70px]">IG</th>
+                  <th className="p-3 text-left whitespace-nowrap">Bus</th>
+                  <th className="p-3 text-left whitespace-nowrap">IG</th>
 
-                  <th className="p-3 text-left w-[120px]">Status</th>
-                  <th className="p-3 text-left w-[90px]">Override</th>
-                  <th className="p-3 text-left w-[70px]">Score</th>
-                  <th className="p-3 text-left w-[110px]">Referrals</th>
-                  <th className="p-3 text-left w-[210px]">Created</th>
+                  <th className="p-3 text-left whitespace-nowrap">Status</th>
+                  <th className="p-3 text-left whitespace-nowrap">Override</th>
+                  <th className="p-3 text-left whitespace-nowrap">Score</th>
+                  <th className="p-3 text-left whitespace-nowrap">Referrals</th>
+                  <th className="p-3 text-left whitespace-nowrap">Created</th>
 
-                  <th className="p-3 text-left w-[820px]">Answers</th>
-                  <th className="p-3 text-right w-[110px]">Action</th>
+                  {/* ✅ Every answer becomes its own column */}
+                  {answerKeys.map((k) => (
+                    <th key={k} className="p-3 text-left whitespace-nowrap">
+                      {k}
+                    </th>
+                  ))}
+
+                  <th className="p-3 text-right whitespace-nowrap">Action</th>
                 </tr>
               </thead>
 
@@ -667,38 +660,38 @@ export default function AdminPage() {
                   const count = r.referrals_count ?? 0;
 
                   const ig = safeStr(r.instagram_handle || "").trim();
-                  const hasIg = ig.length > 0;
+                  const hasIgVal = ig.length > 0;
 
                   return (
                     <tr
                       key={r.id}
                       className="border-t border-black/10 hover:bg-[rgba(252,176,64,0.12)] transition"
                     >
-                      <td className="p-3 font-semibold">{r.role}</td>
-                      <td className="p-3 font-semibold truncate" title={r.full_name}>
+                      <td className="p-3 font-semibold whitespace-nowrap">{r.role}</td>
+                      <td className="p-3 font-semibold whitespace-nowrap" title={r.full_name}>
                         {r.full_name}
                       </td>
-                      <td className="p-3 text-black/70 truncate" title={r.email}>
+                      <td className="p-3 text-black/70 whitespace-nowrap" title={r.email}>
                         {r.email}
                       </td>
 
-                      <td className="p-3 text-black/70">
+                      <td className="p-3 text-black/70 whitespace-nowrap">
                         {typeof r.bus_minutes === "number" ? `${r.bus_minutes} min` : "—"}
                       </td>
 
                       {/* Always Yes/No (never blank) */}
-                      <td className="p-3 text-black/70">{hasIg ? "Yes" : "No"}</td>
+                      <td className="p-3 text-black/70 whitespace-nowrap">{hasIgVal ? "Yes" : "No"}</td>
 
-                      <td className="p-3">
+                      <td className="p-3 whitespace-nowrap">
                         <span className={`inline-flex rounded-full px-3 py-1 text-xs font-extrabold ${pillClass(r.review_status)}`}>
                           {r.review_status}
                         </span>
                       </td>
 
-                      <td className="p-3">{r.role === "vendor" ? r.vendor_queue_override ?? "—" : "—"}</td>
-                      <td className="p-3 font-semibold">{r.role === "vendor" ? r.vendor_priority_score : points}</td>
+                      <td className="p-3 whitespace-nowrap">{r.role === "vendor" ? r.vendor_queue_override ?? "—" : "—"}</td>
+                      <td className="p-3 font-semibold whitespace-nowrap">{r.role === "vendor" ? r.vendor_priority_score : points}</td>
 
-                      <td className="p-3 text-black/70">
+                      <td className="p-3 text-black/70 whitespace-nowrap">
                         {r.role === "consumer" ? (
                           <span className="inline-flex items-center gap-2">
                             <span className="font-semibold text-black">{count}</span>
@@ -709,13 +702,20 @@ export default function AdminPage() {
                         )}
                       </td>
 
-                      <td className="p-3 text-black/60">{new Date(r.created_at).toLocaleString()}</td>
+                      <td className="p-3 text-black/60 whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</td>
 
-                      <td className="p-3">
-                        <AnswersCell answers={r.answers || {}} />
-                      </td>
+                      {/* ✅ Answer cells: show "No" instead of dashes when empty */}
+                      {answerKeys.map((k) => {
+                        const raw = r.answers ? r.answers[k] : undefined;
+                        const val = normalizeAnswerValue(raw).trim();
+                        return (
+                          <td key={k} className="p-3 text-black/80 whitespace-nowrap" title={val || "No"}>
+                            {val ? val : "No"}
+                          </td>
+                        );
+                      })}
 
-                      <td className="p-3 text-right">
+                      <td className="p-3 text-right whitespace-nowrap">
                         <button
                           onClick={() => openRow(r)}
                           className="rounded-xl bg-[#fcb040] px-4 py-2 font-extrabold text-black transition hover:opacity-95"
@@ -729,7 +729,7 @@ export default function AdminPage() {
 
                 {!loading && rows.length === 0 ? (
                   <tr>
-                    <td className="p-6 text-black/60" colSpan={12}>
+                    <td className="p-6 text-black/60" colSpan={tableColCount}>
                       No rows found.
                     </td>
                   </tr>
