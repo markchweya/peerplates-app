@@ -1,18 +1,14 @@
+// src/app/page.tsx
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef } from "react";
-import {
-  motion,
-  useMotionTemplate,
-  useMotionValue,
-  useSpring,
-} from "framer-motion";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useMotionTemplate, useMotionValue, useSpring } from "framer-motion";
 
 import LogoCinematic from "@/app/ui/LogoCinematic";
 import ScrollShowcase from "@/app/ui/ScrollShowcase";
 import HeroFade from "@/app/ui/HeroFade";
-import { MotionDiv, MotionP, MotionH1 } from "@/app/ui/motion";
+import { MotionDiv, MotionH1, MotionP } from "@/app/ui/motion";
 
 function clamp01(n: number) {
   return Math.max(0, Math.min(1, n));
@@ -23,26 +19,20 @@ function clamp01(n: number) {
  * - fades IN quickly as the section enters
  * - holds while you're "in" the section
  * - fades OUT only when the section is actually leaving the viewport
- *
- * Works even if scroll happens inside a nested scroll container,
- * because we listen on document scroll in capture mode and use DOM rects.
  */
 function useCinematicSection(
   ref: React.RefObject<HTMLElement | null>,
   opts?: {
-    // enter: section top crosses these viewport fractions (from below)
-    enterStart?: number; // 0..1 (e.g. 0.95)
-    enterEnd?: number; // 0..1 (e.g. 0.72)
-    // exit: section bottom crosses these viewport fractions (moving up)
-    exitStart?: number; // 0..1 (e.g. 0.72)
-    exitEnd?: number; // 0..1 (e.g. 0.22)
+    enterStart?: number;
+    enterEnd?: number;
+    exitStart?: number;
+    exitEnd?: number;
 
-    yEnter?: number; // px
-    yExit?: number; // px (usually negative)
-    blurEnter?: number; // px
-    blurExit?: number; // px
+    yEnter?: number;
+    yExit?: number;
+    blurEnter?: number;
+    blurExit?: number;
 
-    // spring feel
     stiffness?: number;
     damping?: number;
     mass?: number;
@@ -83,23 +73,14 @@ function useCinematicSection(
       const rect = el.getBoundingClientRect();
       const vh = Math.max(1, window.innerHeight);
 
-      // ENTER (top coming up from below)
-      // 0 when top is below enterStart*vh, 1 when top reaches enterEnd*vh
       const enterDen = Math.max(0.0001, (enterStart - enterEnd) * vh);
       const enterT = clamp01((enterStart * vh - rect.top) / enterDen);
 
-      // EXIT (bottom moving up past the view)
-      // 0 when bottom is below exitStart*vh, 1 when bottom reaches exitEnd*vh
       const exitDen = Math.max(0.0001, (exitStart - exitEnd) * vh);
       const exitT = clamp01((exitStart * vh - rect.bottom) / exitDen);
 
-      // Combine:
-      // - fully visible while in middle
-      // - fade in quickly on enter
-      // - fade out only as it leaves
       const opacity = enterT * (1 - exitT);
 
-      // Y & blur: subtle, and only really kicks in on enter/exit
       const yVal = (1 - enterT) * yEnter + exitT * yExit;
       const blurVal = (1 - enterT) * blurEnter + exitT * blurExit;
 
@@ -113,11 +94,9 @@ function useCinematicSection(
       raf = window.requestAnimationFrame(update);
     };
 
-    // Capture catches nested scrollers too
     document.addEventListener("scroll", schedule, { capture: true, passive: true });
     window.addEventListener("resize", schedule, { passive: true });
 
-    // init
     schedule();
 
     return () => {
@@ -140,23 +119,37 @@ function useCinematicSection(
     bRaw,
   ]);
 
-  return {
-    opacity: o,
-    y,
-    filter,
-  };
+  return { opacity: o, y, filter };
+}
+
+function MenuIcon({ open }: { open: boolean }) {
+  return (
+    <span className="relative block h-4 w-5">
+      <span
+        className="absolute left-0 top-[1px] block h-[2px] w-5 rounded-full bg-slate-900 transition"
+        style={{ transform: open ? "translateY(6px) rotate(45deg)" : "none" }}
+      />
+      <span
+        className="absolute left-0 top-[7px] block h-[2px] w-5 rounded-full bg-slate-900 transition"
+        style={{ opacity: open ? 0 : 1 }}
+      />
+      <span
+        className="absolute left-0 top-[13px] block h-[2px] w-5 rounded-full bg-slate-900 transition"
+        style={{ transform: open ? "translateY(-6px) rotate(-45deg)" : "none" }}
+      />
+    </span>
+  );
 }
 
 export default function Home() {
   const heroRef = useRef<HTMLElement | null>(null);
   const showcaseRef = useRef<HTMLElement | null>(null);
 
-  // HERO: hold longer, fade only when it's truly leaving.
   const heroFx = useCinematicSection(heroRef, {
     enterStart: 1.02,
     enterEnd: 0.88,
-    exitStart: 0.74, // starts fading when hero bottom reaches ~74% of viewport
-    exitEnd: 0.22,   // fully faded near top
+    exitStart: 0.74,
+    exitEnd: 0.22,
     yEnter: 10,
     yExit: -24,
     blurEnter: 0,
@@ -166,12 +159,11 @@ export default function Home() {
     mass: 0.6,
   });
 
-  // SHOWCASE: snaps in quickly; fades out ONLY after you've actually left the 10/10 sticky section.
   const showcaseFx = useCinematicSection(showcaseRef, {
     enterStart: 0.98,
-    enterEnd: 0.80,
-    exitStart: 0.70,
-    exitEnd: 0.20,
+    enterEnd: 0.8,
+    exitStart: 0.7,
+    exitEnd: 0.2,
     yEnter: 14,
     yExit: -18,
     blurEnter: 2,
@@ -181,34 +173,136 @@ export default function Home() {
     mass: 0.58,
   });
 
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  // Close mobile menu if we resize up to desktop
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth >= 768) setMenuOpen(false); // md breakpoint
+    };
+    window.addEventListener("resize", onResize, { passive: true });
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const navLinks = useMemo(
+    () => [
+      { href: "/queue", label: "Check queue", variant: "ghost" as const },
+      { href: "/faq", label: "FAQ", variant: "ghost" as const },
+      { href: "/privacy", label: "Privacy", variant: "ghost" as const },
+      { href: "/join", label: "Join waitlist", variant: "primary" as const },
+    ],
+    []
+  );
+
+  const btnBase =
+    "inline-flex items-center justify-center rounded-2xl px-5 py-2.5 font-extrabold shadow-sm transition hover:-translate-y-[1px] whitespace-nowrap";
+  const btnGhost = "border border-slate-200 bg-white/90 backdrop-blur text-slate-900 hover:bg-slate-50";
+  const btnPrimary = "bg-[#fcb040] text-slate-900 hover:opacity-95";
+
   return (
     <main className="min-h-screen bg-white text-slate-900">
-      {/* Header hides/shows based on scroll direction (snappy, cinematic) */}
-      <HeroFade directionDelta={7} className="fixed top-0 left-0 right-0 z-[100]">
+      {/* Header */}
+      <HeroFade directionDelta={7} className="fixed top-0 left-0 right-0 z-[100] pointer-events-auto">
         <div className="border-b border-slate-200/60 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
           <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between gap-4">
-              <Link href="/" className="flex items-center">
-                <LogoCinematic size={56} wordScale={1} />
+            {/* ✅ min-w-0 prevents the logo from pushing/clipping the menu on tiny widths */}
+            <div className="flex items-center gap-3 min-w-0">
+              {/* ✅ Logo allowed to shrink/truncate instead of stealing the whole row */}
+              <Link href="/" className="flex items-center min-w-0 overflow-hidden">
+                <span className="shrink-0">
+                  <LogoCinematic size={56} wordScale={1} />
+                </span>
               </Link>
 
-              <div className="flex items-center gap-3">
-                <Link
-                  href="/queue"
-                  className="rounded-2xl border border-slate-200 px-5 py-2.5 font-semibold hover:bg-slate-50 transition whitespace-nowrap shadow-sm"
-                >
-                  Check queue
-                </Link>
+              {/* ✅ Desktop nav */}
+              <div className="hidden md:flex items-center gap-3 ml-auto">
+                {navLinks.map((l) => (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    className={[btnBase, l.variant === "primary" ? btnPrimary : btnGhost].join(" ")}
+                  >
+                    {l.label}
+                  </Link>
+                ))}
+              </div>
 
-                <Link
-                  href="/join"
-                  className="rounded-2xl bg-[#fcb040] px-5 py-2.5 font-extrabold text-slate-900 shadow-sm transition hover:opacity-95 hover:-translate-y-[1px] whitespace-nowrap"
+              {/* ✅ Mobile hamburger ALWAYS visible: ml-auto + shrink-0 + z */}
+              <div className="md:hidden ml-auto shrink-0 relative z-[110]">
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  aria-label={menuOpen ? "Close menu" : "Open menu"}
+                  aria-expanded={menuOpen}
+                  className={[
+                    // smaller, chatgpt-ish pill on tiny screens
+                    "inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white/90 backdrop-blur",
+                    "h-10 px-3 shadow-sm transition hover:-translate-y-[1px]",
+                  ].join(" ")}
                 >
-                  Join waitlist
-                </Link>
+                  {/* label only on sm+ so it never crowds small screens */}
+                  <span className="hidden sm:inline text-sm font-extrabold">Menu</span>
+                  <MenuIcon open={menuOpen} />
+                </button>
               </div>
             </div>
           </div>
+
+          {/* ✅ Mobile dropdown */}
+          <AnimatePresence initial={false}>
+            {menuOpen ? (
+              <motion.div
+                key="mobile-menu"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.22, ease: [0.2, 0.9, 0.2, 1] }}
+                className="md:hidden overflow-hidden"
+              >
+                <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-4 sm:px-6 lg:px-8 pb-4">
+                  <div
+                    className="rounded-3xl border border-slate-200 bg-white/90 backdrop-blur p-3 shadow-sm"
+                    style={{ boxShadow: "0 18px 60px rgba(2,6,23,0.08)" }}
+                  >
+                    <div className="grid gap-2">
+                      {navLinks.map((l) => (
+                        <Link
+                          key={l.href}
+                          href={l.href}
+                          onClick={() => setMenuOpen(false)}
+                          className={[
+                            "w-full",
+                            btnBase,
+                            "px-5 py-3",
+                            l.variant === "primary" ? btnPrimary : btnGhost,
+                          ].join(" ")}
+                        >
+                          {l.label}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </div>
       </HeroFade>
 
@@ -259,8 +353,8 @@ export default function Home() {
                 transition={{ duration: 0.55, delay: 0.2 }}
                 className="mt-6 max-w-lg text-base sm:text-lg text-slate-600 leading-relaxed"
               >
-                Skip the takeaway. Get warm, home-cooked food from trusted local cooks — while helping
-                small vendors grow.
+                Skip the takeaway. Get warm, home-cooked food from trusted local cooks — while helping small vendors
+                grow.
               </MotionP>
 
               <MotionDiv
