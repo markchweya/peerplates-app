@@ -1,11 +1,10 @@
+// src/app/queue/page.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MotionDiv } from "@/app/ui/motion";
-
-const BRAND = "#fcb040";
+import LogoCinematic from "@/app/ui/LogoCinematic";
 
 type QueueResult = {
   email: string;
@@ -19,125 +18,197 @@ type QueueResult = {
 };
 
 function formatStatus(s: QueueResult["review_status"]) {
-  if (s === "approved") return "Approved ✅";
-  if (s === "rejected") return "Rejected ❌";
-  if (s === "reviewed") return "Reviewed 🔎";
-  return "Pending ⏳";
+  if (s === "approved") return "Approved";
+  if (s === "rejected") return "Rejected";
+  if (s === "reviewed") return "Reviewed";
+  return "Pending";
 }
 
 const inputBase =
   "h-12 w-full rounded-2xl border border-[#fcb040] bg-white px-4 font-semibold text-black outline-none " +
-  "focus:ring-4 focus:ring-[rgba(252,176,64,0.30)]";
+  "focus:ring-4 focus:ring-[rgba(252,176,64,0.30)] placeholder:text-black/40";
 
-const buttonBase =
-  "w-full rounded-2xl bg-[#fcb040] px-6 py-3 text-center font-extrabold text-black transition hover:opacity-95 hover:-translate-y-[1px] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed";
+const primaryBtn =
+  "w-full rounded-2xl bg-[#fcb040] px-6 py-3 text-center font-extrabold text-black transition " +
+  "hover:opacity-95 hover:-translate-y-[1px] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0";
 
-const subtleButton =
-  "w-full rounded-2xl border border-black/10 bg-white px-6 py-3 text-center font-extrabold text-black hover:bg-black/5 transition";
-
-function onlyDigits(v: string) {
-  return v.replace(/\D/g, "").slice(0, 6);
-}
-
-function normalizeQueueCode(v: string) {
-  // allow A-Z 0-9, strip spaces/symbols, uppercase
-  return String(v || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "");
-}
+const subtleBtn =
+  "w-full rounded-2xl border border-black/10 bg-white px-6 py-3 text-center font-extrabold text-black transition " +
+  "hover:bg-black/5 hover:-translate-y-[1px] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0";
 
 export default function QueuePage() {
-  const sp = useSearchParams();
-  const codeFromUrl = (sp.get("code") || "").trim();
+  const [step, setStep] = useState<"email" | "code">("email");
 
-  const [mode, setMode] = useState<"code" | "otp">("code");
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
 
-  const [code, setCode] = useState(codeFromUrl);
-  const [otp, setOtp] = useState(""); // 6 digits
+  const [loading, setLoading] = useState(false); // verifying
+  const [sending, setSending] = useState(false); // sending code
 
-  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [info, setInfo] = useState<string>("");
   const [result, setResult] = useState<QueueResult | null>(null);
 
-  // If you still rely on these envs elsewhere, keep the warning.
-  const envMissing = false;
+  // resend cooldown
+  const COOLDOWN_MS = 30_000;
+  const [cooldownUntil, setCooldownUntil] = useState<number>(0);
+  const [showCooldownMsg, setShowCooldownMsg] = useState(false);
+  const [nowTick, setNowTick] = useState(Date.now());
 
-  const inFlight = useRef(false);
+  const verifyDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const verifyingInFlightRef = useRef(false);
 
-  const fetchStatus = async (raw: string) => {
-    const queueCode = normalizeQueueCode(raw);
-    if (!queueCode || queueCode.length < 6) {
-      setErr("Please enter a valid code.");
-      return;
-    }
+  const canSend = useMemo(() => {
+    const em = String(email || "").trim();
+    return !!em;
+  }, [email]);
 
-    if (inFlight.current) return;
-    inFlight.current = true;
+  const canVerify = useMemo(() => {
+    const em = String(email || "").trim();
+    const token = String(code || "").trim();
+    return !!em && token.length >= 6;
+  }, [email, code]);
+
+  const secondsLeft = useMemo(() => {
+    const ms = Math.max(0, cooldownUntil - nowTick);
+    return Math.ceil(ms / 1000);
+  }, [cooldownUntil, nowTick]);
+
+  useEffect(() => {
+    if (!showCooldownMsg) return;
+
+    const t = setInterval(() => setNowTick(Date.now()), 250);
+
+    return () => clearInterval(t);
+  }, [showCooldownMsg]);
+
+  useEffect(() => {
+    // hide the security message automatically when cooldown ends
+    if (!showCooldownMsg) return;
+    if (cooldownUntil <= Date.now()) setShowCooldownMsg(false);
+  }, [showCooldownMsg, cooldownUntil, nowTick]);
+
+  const verifyCode = async () => {
+    if (verifyingInFlightRef.current) return;
 
     setErr("");
+    setInfo("");
     setLoading(true);
     setResult(null);
 
+    verifyingInFlightRef.current = true;
+
     try {
-      const res = await fetch(`/api/queue-status?code=${encodeURIComponent(queueCode)}`);
+      const em = String(email || "").trim().toLowerCase();
+      const token = String(code || "").trim();
+
+      if (!em) throw new Error("Please enter your email.");
+      if (!token || token.length < 6) throw new Error("Please enter the 6‑digit code.");
+
+      const res = await fetch("/api/queue-verify-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: em, token }),
+      });
+
       const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload?.error || "Failed to fetch queue status.");
+      if (!res.ok) throw new Error(payload?.error || "Failed to verify code.");
+
       setResult(payload as QueueResult);
     } catch (e: any) {
-      setErr(e?.message || "Failed to fetch status.");
+      setErr(e?.message || "Failed to verify.");
     } finally {
+      verifyingInFlightRef.current = false;
       setLoading(false);
-      inFlight.current = false;
     }
   };
 
-  // Auto-load if link had ?code=
-  useEffect(() => {
-    const c = normalizeQueueCode(codeFromUrl);
-    if (c) {
-      setMode("code");
-      setCode(c);
-      fetchStatus(c);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [codeFromUrl]);
+  const sendNewCode = async (source: "primary" | "resend") => {
+    setErr("");
+    setInfo("");
 
-  // ✅ Auto-submit OTP the instant it becomes 6 digits
-  useEffect(() => {
-    if (mode !== "otp") return;
-    if (otp.length === 6) {
-      fetchStatus(otp); // treat OTP as code input (server accepts A-Z0-9; digits are fine)
+    const em = String(email || "").trim().toLowerCase();
+    if (!em) {
+      setErr("Please enter your email to request a code.");
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [otp, mode]);
 
-  const copyReferral = async () => {
-    if (!result?.referral_link) return;
+    // Only show the “security purposes…” message when the user tries to resend too soon.
+    const inCooldown = cooldownUntil > Date.now();
+    if (source === "resend" && inCooldown) {
+      setShowCooldownMsg(true);
+      return;
+    }
+
+    setSending(true);
+
     try {
-      await navigator.clipboard.writeText(result.referral_link);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1400);
-    } catch {
-      setErr("Copy failed. Please copy manually.");
+      const res = await fetch("/api/queue-send-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: em }),
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload?.error || "Couldn’t send a new code.");
+
+      setInfo("Code sent. Check your inbox (and spam).");
+      setShowCooldownMsg(false);
+
+      // start cooldown after a successful send
+      setCooldownUntil(Date.now() + COOLDOWN_MS);
+
+      // move to code step automatically
+      setStep("code");
+    } catch (e: any) {
+      setErr(e?.message || "Couldn’t send a new code.");
+    } finally {
+      setSending(false);
     }
   };
+
+  // Auto-verify as soon as a valid code is entered (debounced)
+  useEffect(() => {
+    if (step !== "code") return;
+    if (!canVerify) return;
+    if (loading) return;
+
+    if (verifyDebounceRef.current) clearTimeout(verifyDebounceRef.current);
+
+    verifyDebounceRef.current = setTimeout(() => {
+      verifyCode();
+    }, 450);
+
+    return () => {
+      if (verifyDebounceRef.current) clearTimeout(verifyDebounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, canVerify, email, code]);
 
   const reset = () => {
     setResult(null);
     setErr("");
-    setLoading(false);
-    inFlight.current = false;
+    setInfo("");
+    setCode("");
+    setStep("email");
+    setShowCooldownMsg(false);
   };
-
-  const otpBoxes = useMemo(() => {
-    const digits = otp.padEnd(6, " ").split("").slice(0, 6);
-    return digits;
-  }, [otp]);
 
   return (
     <main className="min-h-screen bg-white text-black">
+      {/* soft cinematic bg */}
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-white via-slate-50/60 to-white" />
+        <div
+          className="absolute -left-40 top-10 h-[520px] w-[520px] rounded-full blur-3xl opacity-25"
+          style={{ background: "rgba(252,176,64,0.30)" }}
+        />
+        <div
+          className="absolute -right-44 bottom-[-120px] h-[560px] w-[560px] rounded-full blur-3xl opacity-25"
+          style={{ background: "rgba(138,107,67,0.18)" }}
+        />
+      </div>
+
       <div className="mx-auto w-full max-w-xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
         <MotionDiv
           initial={{ opacity: 0, y: -10 }}
@@ -145,10 +216,10 @@ export default function QueuePage() {
           transition={{ duration: 0.45 }}
           className="flex items-center justify-between gap-4"
         >
-          <Link href="/" className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl" style={{ background: BRAND }} />
-            <div className="text-lg font-semibold tracking-tight">PeerPlates</div>
+          <Link href="/" className="flex items-center">
+            <LogoCinematic size={56} wordScale={1} />
           </Link>
+
           <div className="text-sm text-black/60 whitespace-nowrap">Queue</div>
         </MotionDiv>
 
@@ -156,17 +227,25 @@ export default function QueuePage() {
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55, delay: 0.08 }}
-          className="mt-8 rounded-3xl border border-black/10 bg-white p-6 shadow-sm"
+          className="mt-8 rounded-3xl border border-black/10 bg-white/90 backdrop-blur p-6 shadow-sm"
+          style={{ boxShadow: "0 18px 60px rgba(2,6,23,0.08)" }}
         >
-          <h1 className="text-xl font-extrabold tracking-tight font-heading">Check your queue status</h1>
+          <h1 className="text-xl font-extrabold tracking-tight">Check your queue status</h1>
           <p className="mt-2 text-sm text-black/60">
-            Enter your <span className="font-semibold">queue code</span> or your <span className="font-semibold">6-digit OTP</span>. We’ll auto-check when OTP is complete.
+            Enter your email to receive a 6‑digit code. After you paste the code, we’ll show your status automatically.
           </p>
 
-          {envMissing ? (
-            <div className="mt-4 rounded-2xl border border-black/10 bg-black/5 p-3 text-sm">
-              Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel env vars.
-            </div>
+          {/* Only show this security message when user pressed resend and cooldown not over */}
+          {showCooldownMsg && secondsLeft > 0 ? (
+            <MotionDiv
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
+              className="mt-4 rounded-2xl border border-black/10 bg-black/5 p-3 text-sm text-black"
+            >
+              For security purposes, you can only request this after <span className="font-extrabold">{secondsLeft}</span>{" "}
+              seconds.
+            </MotionDiv>
           ) : null}
 
           {err ? (
@@ -180,185 +259,134 @@ export default function QueuePage() {
             </MotionDiv>
           ) : null}
 
+          {info ? (
+            <MotionDiv
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
+              className="mt-4 rounded-2xl border border-[#fcb040]/40 bg-white p-3 text-sm text-black"
+              style={{ boxShadow: "0 0 0 1px rgba(252,176,64,0.18), 0 18px 50px rgba(252,176,64,0.10)" }}
+            >
+              {info}
+            </MotionDiv>
+          ) : null}
+
           {!result ? (
-            <div className="mt-5 grid gap-4">
-              {/* Mode toggle */}
-              <div className="grid grid-cols-2 gap-2 rounded-2xl border border-black/10 bg-white p-2">
-                <button
-                  type="button"
-                  onClick={() => setMode("code")}
-                  className={[
-                    "rounded-2xl px-4 py-2.5 font-extrabold transition",
-                    mode === "code" ? "bg-[#fcb040] text-black" : "bg-white hover:bg-black/5",
-                  ].join(" ")}
-                >
-                  Queue code
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode("otp")}
-                  className={[
-                    "rounded-2xl px-4 py-2.5 font-extrabold transition",
-                    mode === "otp" ? "bg-[#fcb040] text-black" : "bg-white hover:bg-black/5",
-                  ].join(" ")}
-                >
-                  6-digit OTP
-                </button>
+            <div className="mt-6 grid gap-4">
+              {/* STEP 1: Email only */}
+              <div className="grid gap-2">
+                <label className="text-sm font-semibold">Email</label>
+                <input
+                  className={inputBase}
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  type="email"
+                  autoComplete="email"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      // If we’re still on email step, send code and move forward
+                      if (step === "email") sendNewCode("primary");
+                    }
+                  }}
+                />
               </div>
 
-              {mode === "code" ? (
-                <>
-                  <div className="grid gap-2">
-                    <label className="text-sm font-semibold">Queue code</label>
-                    <input
-                      className={inputBase}
-                      placeholder="e.g. 7H2K9QX1AB"
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                      autoCapitalize="characters"
-                      autoCorrect="off"
-                      spellCheck={false}
-                    />
-                  </div>
-
-                  <button
-                    className={buttonBase}
-                    onClick={() => fetchStatus(code)}
-                    disabled={loading || !normalizeQueueCode(code) || envMissing}
-                  >
-                    {loading ? "Loading…" : "View status"}
-                  </button>
-
-                  <div className="text-xs text-black/50">
-                    Don’t have your code? Check the email you received after submitting the waitlist form.
-                  </div>
-                </>
+              {step === "email" ? (
+                <button className={primaryBtn} onClick={() => sendNewCode("primary")} disabled={sending || !canSend}>
+                  {sending ? "Sending…" : "Send code"}
+                </button>
               ) : (
                 <>
+                  {/* STEP 2: Code */}
                   <div className="grid gap-2">
-                    <label className="text-sm font-semibold">6-digit OTP</label>
-
-                    {/* Nice OTP “boxes” UI */}
-                    <div className="flex items-center gap-2">
-                      {otpBoxes.map((d, i) => (
-                        <div
-                          key={i}
-                          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-black/10 bg-white text-lg font-extrabold"
-                          style={{
-                            boxShadow: d.trim() ? "0 0 0 3px rgba(252,176,64,0.25)" : undefined,
-                          }}
-                        >
-                          {d === " " ? "" : d}
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Hidden real input */}
+                    <label className="text-sm font-semibold">6‑digit code</label>
                     <input
                       className={inputBase}
+                      placeholder="123456"
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
                       inputMode="numeric"
-                      placeholder="Type your 6 digits…"
-                      value={otp}
-                      onChange={(e) => {
-                        setErr("");
-                        setOtp(onlyDigits(e.target.value));
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          if (canVerify) verifyCode();
+                        }
                       }}
-                      maxLength={6}
-                      autoComplete="one-time-code"
                     />
-
                     <div className="text-xs text-black/50">
-                      Auto-checks instantly at 6 digits.
+                      Paste the code — your status will appear automatically once it’s valid.
                     </div>
                   </div>
 
-                  <button
-                    className={buttonBase}
-                    onClick={() => fetchStatus(otp)}
-                    disabled={loading || otp.length !== 6 || envMissing}
-                  >
-                    {loading ? "Loading…" : "View status"}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {/* Keep a button (nice to have), but auto-verify still runs */}
+                    <button className={primaryBtn} onClick={verifyCode} disabled={loading || !canVerify}>
+                      {loading ? "Verifying…" : "Verify"}
+                    </button>
+
+                    <button className={subtleBtn} onClick={() => sendNewCode("resend")} disabled={sending || !canSend}>
+                      {sending ? "Sending…" : "Send another code"}
+                    </button>
+                  </div>
+
+                  <button className={subtleBtn} onClick={reset} disabled={loading || sending}>
+                    Use a different email
                   </button>
                 </>
               )}
+
+              {step === "email" ? (
+                <div className="text-xs text-black/50">
+                  You’ll receive an email from PeerPlates with a one-time 6‑digit code.
+                </div>
+              ) : null}
             </div>
           ) : (
             <MotionDiv
-              initial={{ opacity: 0, scale: 0.98, y: 10 }}
+              initial={{ opacity: 0, scale: 0.985, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               transition={{ duration: 0.35 }}
-              className="mt-6 grid gap-3"
+              className="mt-6 grid gap-4"
             >
-              <div className="rounded-3xl border border-[#fcb040] bg-white p-4">
+              <div className="rounded-3xl border border-[#fcb040]/50 bg-white p-5">
                 <div className="text-sm font-extrabold">Your status</div>
 
-                <div className="mt-2 grid gap-2 text-sm text-black/80">
+                <div className="mt-3 grid gap-2 text-sm text-black/80">
                   <div>
                     <span className="font-semibold">Email:</span> {result.email}
                   </div>
                   <div>
                     <span className="font-semibold">Role:</span> {result.role}
                   </div>
-                  <div>
-                    <span className="font-semibold">Status:</span> {formatStatus(result.review_status)}
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">Status:</span>
+                    <span className="inline-flex items-center rounded-full border border-black/10 bg-black/5 px-2.5 py-1 text-xs font-extrabold">
+                      {formatStatus(result.review_status)}
+                    </span>
                   </div>
 
                   <div>
                     <span className="font-semibold">Queue position:</span>{" "}
-                    {result.position ? (
+                    {typeof result.position === "number" ? (
                       <span className="font-extrabold">#{result.position}</span>
                     ) : (
                       <span className="text-black/60">Not available</span>
                     )}
                   </div>
 
-                  <div>
-                    <span className="font-semibold">
-                      {result.role === "consumer" ? "Referral points" : "Vendor score"}:
-                    </span>{" "}
-                    <span className="font-extrabold">{result.score}</span>
-                  </div>
-
-                  <div className="text-xs text-black/50">
-                    Joined: {new Date(result.created_at).toLocaleString()}
-                  </div>
+                  <div className="text-xs text-black/50">Joined: {new Date(result.created_at).toLocaleString()}</div>
                 </div>
               </div>
 
-              {/* Referral link + copy */}
-              {result.referral_link ? (
-                <MotionDiv
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35, delay: 0.05 }}
-                  className="rounded-3xl border border-black/10 bg-white p-4"
-                >
-                  <div className="text-sm font-extrabold">Your referral link</div>
-                  <div className="mt-2 grid gap-2">
-                    <div className="flex items-center gap-2">
-                      <input className={inputBase} value={result.referral_link} readOnly />
-                      <button
-                        type="button"
-                        onClick={copyReferral}
-                        className="shrink-0 rounded-2xl border border-black/10 bg-white px-4 py-3 font-extrabold hover:bg-black/5 transition"
-                      >
-                        {copied ? "Copied!" : "Copy"}
-                      </button>
-                    </div>
-                  </div>
-                </MotionDiv>
-              ) : null}
-
-              <div className="grid gap-2 sm:grid-cols-2">
-                <button
-                  className={buttonBase}
-                  onClick={() => fetchStatus(mode === "otp" ? otp : code)}
-                  disabled={loading}
-                >
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button className={primaryBtn} onClick={verifyCode} disabled={loading}>
                   {loading ? "Refreshing…" : "Refresh"}
                 </button>
-                <button className={subtleButton} onClick={reset} disabled={loading}>
-                  Check another code
+
+                <button className={subtleBtn} onClick={reset} disabled={loading}>
+                  Check another email
                 </button>
               </div>
             </MotionDiv>
