@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { motion, useMotionValue, animate } from "framer-motion";
+import { motion, useMotionValue, animate, type PanInfo } from "framer-motion";
 
 type ShowcaseItem = {
   image: string;
@@ -25,7 +25,7 @@ function clamp(n: number, min: number, max: number) {
 
 export default function ScrollShowcase({
   heading = "Showcase",
-  subheading = "Swipe left ↔ right (or use the arrows) to explore.",
+  subheading = "Swipe left ↔ right to explore the gallery.",
   items,
   direction = "ltr",
   snap = true,
@@ -43,41 +43,14 @@ export default function ScrollShowcase({
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
   const [vw, setVw] = useState(0);
-  const [activeIndex, setActiveIndex] = useState(() =>
-    direction === "rtl" ? Math.max(0, items.length - 1) : 0
-  );
+  const [activeIndex, setActiveIndex] = useState(direction === "rtl" ? Math.max(0, items.length - 1) : 0);
 
-  // Track X is the single source of truth (no native overflow scrolling)
+  // Motion value for the track X
   const x = useMotionValue(0);
-
-  // Visual sizing to match your design: width = min(980px, 92vw), gap = 8 (32px)
-  const gapPx = 32;
-
-  const cardW = useMemo(() => Math.min(980, vw * 0.92), [vw]);
-  const step = useMemo(() => cardW + gapPx, [cardW]);
-
-  // Center a card inside the viewport
-  const centerOffset = useMemo(() => Math.round((vw - cardW) / 2), [vw, cardW]);
 
   const maxIdx = useMemo(() => Math.max(0, items.length - 1), [items.length]);
 
-  const targetXForIndex = useCallback(
-    (idx: number) => {
-      // idx 0 centered => x = centerOffset
-      // idx i => x = centerOffset - i * step
-      return Math.round(centerOffset - idx * step);
-    },
-    [centerOffset, step]
-  );
-
-  // Drag bounds so you can't over-drag into empty space
-  const bounds = useMemo(() => {
-    const right = targetXForIndex(0);
-    const left = targetXForIndex(maxIdx);
-    return { left, right };
-  }, [maxIdx, targetXForIndex]);
-
-  // Measure viewport width
+  // Measure viewport width reliably
   useLayoutEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
@@ -98,66 +71,96 @@ export default function ScrollShowcase({
     };
   }, []);
 
+  // ✅ Mobile: one card per view (no peek)
+  const isMobile = vw > 0 && vw < 768;
+
+  // layout values
+  const gapPx = isMobile ? 0 : 32;
+
+  // ✅ Card width:
+  // - mobile: exactly viewport width (so only one shows)
+  // - desktop: your original cinematic size
+  const cardW = useMemo(() => {
+    if (vw <= 0) return 0;
+    return isMobile ? vw : Math.min(980, vw * 0.92);
+  }, [vw, isMobile]);
+
+  const centerOffset = useMemo(() => {
+    if (vw <= 0) return 0;
+    // center card in the viewport (desktop). On mobile this becomes 0 anyway (vw-cardW=0)
+    return Math.round((vw - cardW) / 2);
+  }, [vw, cardW]);
+
+  const step = useMemo(() => cardW + gapPx, [cardW, gapPx]);
+
+  const targetXForIndex = useCallback(
+    (idx: number) => Math.round(centerOffset - idx * step),
+    [centerOffset, step]
+  );
+
+  const bounds = useMemo(() => {
+    const right = targetXForIndex(0);
+    const left = targetXForIndex(maxIdx);
+    return { left, right };
+  }, [maxIdx, targetXForIndex]);
+
   // Keep activeIndex valid if items change
   useEffect(() => {
     setActiveIndex((i) => clamp(i, 0, maxIdx));
   }, [maxIdx]);
 
-  // Animate track to active slide
+  // Snap/animate to activeIndex
   useEffect(() => {
+    if (vw <= 0 || cardW <= 0) return;
+
     const to = targetXForIndex(activeIndex);
+
     const controls = animate(x, to, {
       type: "spring",
-      stiffness: 360,
-      damping: 36,
-      mass: 0.65,
+      stiffness: 320,
+      damping: 34,
+      mass: 0.6,
     });
+
     return () => controls.stop();
-  }, [activeIndex, targetXForIndex, x]);
+  }, [activeIndex, targetXForIndex, x, vw, cardW]);
 
   const goPrev = useCallback(() => setActiveIndex((i) => clamp(i - 1, 0, maxIdx)), [maxIdx]);
   const goNext = useCallback(() => setActiveIndex((i) => clamp(i + 1, 0, maxIdx)), [maxIdx]);
+  const jumpToIndex = useCallback((idx: number) => setActiveIndex(clamp(idx, 0, maxIdx)), [maxIdx]);
 
-  // If you still want RTL semantics, invert arrows
-  const prevHandler = direction === "rtl" ? goNext : goPrev;
-  const nextHandler = direction === "rtl" ? goPrev : goNext;
-
-  const jumpToIndex = useCallback((idx: number) => {
-    setActiveIndex(clamp(idx, 0, maxIdx));
-  }, [maxIdx]);
-
+  // Drag end -> decide which slide to snap to
   const onDragEnd = useCallback(
-    (_: any, info: { offset: { x: number }; velocity: { x: number } }) => {
+    (_: any, info: PanInfo) => {
       if (!snap) return;
 
       const offsetX = info.offset.x;
       const velX = info.velocity.x;
 
-      // thresholds
       const distThresh = Math.min(140, cardW * 0.18);
       const velThresh = 520;
 
       let nextIndex = activeIndex;
 
-      // Dragging the track right means showing "previous" card
       if (offsetX > distThresh || velX > velThresh) nextIndex = activeIndex - 1;
       else if (offsetX < -distThresh || velX < -velThresh) nextIndex = activeIndex + 1;
       else {
-        // Snap to nearest based on current X
+        // snap to nearest based on current x
         const currentX = x.get();
         const approx = (centerOffset - currentX) / Math.max(1, step);
         nextIndex = Math.round(approx);
       }
 
-      nextIndex = clamp(nextIndex, 0, maxIdx);
-      setActiveIndex(nextIndex);
+      setActiveIndex(clamp(nextIndex, 0, maxIdx));
     },
     [activeIndex, cardW, centerOffset, maxIdx, snap, step, x]
   );
 
+  // Tilt styling per-card (visual only)
   const cardStyleFor = useCallback(
-    (idx: number): React.CSSProperties | undefined => {
-      if (!tilt) return undefined;
+    (idx: number) => {
+      // ✅ Never tilt on mobile (tilt can also make “peek” feel worse)
+      if (!tilt || isMobile) return undefined;
 
       const delta = idx - activeIndex;
       const abs = Math.abs(delta);
@@ -175,10 +178,14 @@ export default function ScrollShowcase({
         transition: "transform 220ms ease, filter 220ms ease, opacity 220ms ease",
         transformStyle: "preserve-3d" as any,
         willChange: "transform, filter, opacity",
-      };
+      } as React.CSSProperties;
     },
-    [activeIndex, tilt]
+    [activeIndex, tilt, isMobile]
   );
+
+  // Arrow semantics: if rtl invert controls
+  const prevHandler = direction === "rtl" ? goNext : goPrev;
+  const nextHandler = direction === "rtl" ? goPrev : goNext;
 
   return (
     <section className="relative">
@@ -255,34 +262,44 @@ export default function ScrollShowcase({
       {/* viewport */}
       <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-4 sm:px-6 lg:px-8 mt-10 sm:mt-12 pb-14">
         <div className="relative" ref={viewportRef}>
-          {/* fade edges */}
+          {/* fade edges: ✅ hide on mobile so nothing looks “covered” */}
           <div
-            className="pointer-events-none absolute inset-y-0 left-0 w-10 sm:w-14 z-10"
+            className="pointer-events-none absolute inset-y-0 left-0 w-10 sm:w-14 z-10 hidden md:block"
             style={{ background: "linear-gradient(to right, rgba(255,255,255,1), rgba(255,255,255,0))" }}
           />
           <div
-            className="pointer-events-none absolute inset-y-0 right-0 w-10 sm:w-14 z-10"
+            className="pointer-events-none absolute inset-y-0 right-0 w-10 sm:w-14 z-10 hidden md:block"
             style={{ background: "linear-gradient(to left, rgba(255,255,255,1), rgba(255,255,255,0))" }}
           />
 
-          {/* No native scroll: motion track moves instead, so arrows ALWAYS work */}
           <div
             className="overflow-hidden rounded-[34px]"
             style={{
-              // allow normal vertical page scroll while enabling horizontal drag inside
               touchAction: "pan-y",
             }}
           >
             <motion.div
-              className="flex gap-8 pr-[18vw] py-2"
-              style={{ x }}
+              className="flex py-2"
+              style={{
+                x,
+                gap: `${gapPx}px`,
+                // ✅ no trailing peek on mobile
+                paddingRight: isMobile ? 0 : `${Math.round(vw * 0.18)}px`,
+              }}
               drag="x"
               dragConstraints={bounds}
               dragElastic={0.08}
               onDragEnd={onDragEnd}
             >
               {items.map((it, idx) => (
-                <div key={`${it.title}-${idx}`} className="shrink-0" style={{ width: "min(980px, 92vw)" }}>
+                <div
+                  key={`${it.title}-${idx}`}
+                  className="shrink-0"
+                  style={{
+                    // ✅ one full card at a time on mobile
+                    width: `${cardW}px`,
+                  }}
+                >
                   <div
                     style={cardStyleFor(idx)}
                     className="rounded-[34px] border border-slate-200/70 bg-white/80 backdrop-blur shadow-[0_18px_60px_rgba(15,23,42,0.10)] overflow-hidden"
@@ -296,7 +313,8 @@ export default function ScrollShowcase({
                             alt={it.title}
                             fill
                             priority={idx === 0}
-                            sizes="(max-width: 768px) 92vw, 980px"
+                            sizes="(max-width: 768px) 100vw, 980px"
+                            // ✅ Keep cover (your original look), but now frame is stable
                             className="object-cover"
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/25 via-black/0 to-black/0" />
@@ -330,7 +348,8 @@ export default function ScrollShowcase({
                 </div>
               ))}
 
-              <div className="w-10 shrink-0" />
+              {/* spacer only on desktop */}
+              {!isMobile ? <div className="w-10 shrink-0" /> : null}
             </motion.div>
           </div>
         </div>

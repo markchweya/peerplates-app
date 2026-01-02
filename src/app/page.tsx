@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useMotionTemplate, useMotionValue, useSpring } from "framer-motion";
 
 import LogoCinematic from "@/app/ui/LogoCinematic";
@@ -416,9 +416,7 @@ export default function Home() {
             >
               <div>
                 <div className="text-xl font-extrabold">How it works</div>
-                <div className="mt-2 text-slate-600 font-semibold">
-                  Join in minutes. Get a code. Share. Move up the waitlist.
-                </div>
+                <div className="mt-2 text-slate-600 font-semibold">Join in minutes. Get a code. Share. Move up the waitlist.</div>
               </div>
 
               <div className="mt-6 grid gap-4">
@@ -467,7 +465,15 @@ export default function Home() {
           subheading="See how PeerPlates makes ordering and managing home-cooked food effortless."
           direction="ltr"
           snap={true}
-          tilt={true}
+          /**
+           * ✅ FIX for “photos look expanded”
+           * The tilt mode in many horizontal showcase components applies a subtle scale/perspective
+           * that makes screenshots look “zoomed”. Disable it here so images render 1:1.
+           *
+           * If you still want tilt later, we can re-enable it after changing ScrollShowcase’s
+           * image fit from `cover` -> `contain`.
+           */
+          tilt={false}
           nav={[
             { label: "Ordering", index: 0 },
             { label: "Storefront", index: 2 },
@@ -504,38 +510,34 @@ export default function Home() {
               subtitle: "Your profile. Your followers. Your drops.",
               desc: "Build a loyal following with your own vendor profile — customers can follow, view your posts, and stay updated on your collection days and latest drops.",
             },
-        {
-  image: "/images/gallery/gallery5.jpeg",
-  kicker: "Analytics",
-  title: "Eliminate the guesswork — PeerPlates tracks it for you.",
-  subtitle: "Orders, earnings, and what’s trending.",
-  desc: "Orders, revenue, customer activity, peak times — all in one clean dashboard.",
-},
-{
-  image: "/images/gallery/gallery6.png",
-  kicker: "Insights",
-  title: "Make smarter decisions with live performance stats.",
-  subtitle: "See your top sellers — fast.",
-  desc: "Know what’s working. See what’s moving fastest — and double down on the dishes that drive revenue.",
-},
-
-          {
-  image: "/images/gallery/gallery7.jpeg",
-  kicker: "Vendor control",
-  title: "Set a cutoff. Stay in control.",
-  subtitle: "Orders close when you say so.",
-  desc: "Choose how far in advance customers must order — so you’ve got time to prep and don’t get overloaded.",
-},
-
-          
-          {
-  image: "/images/gallery/gallery9.png",
-  kicker: "Your kitchen. Your rules.",
-  title: "Set slots. Cap orders. Keep control.",
-  subtitle: "You decide when you’re taking orders and when you’re not.",
-  desc: "PeerPlates fits around your life — not the other way round.",
-},
-
+            {
+              image: "/images/gallery/gallery5.jpeg",
+              kicker: "Analytics",
+              title: "Eliminate the guesswork — PeerPlates tracks it for you.",
+              subtitle: "Orders, earnings, and what’s trending.",
+              desc: "Orders, revenue, customer activity, peak times — all in one clean dashboard.",
+            },
+            {
+              image: "/images/gallery/gallery6.png",
+              kicker: "Insights",
+              title: "Make smarter decisions with live performance stats.",
+              subtitle: "See your top sellers — fast.",
+              desc: "Know what’s working. See what’s moving fastest — and double down on the dishes that drive revenue.",
+            },
+            {
+              image: "/images/gallery/gallery7.jpeg",
+              kicker: "Vendor control",
+              title: "Set a cutoff. Stay in control.",
+              subtitle: "Orders close when you say so.",
+              desc: "Choose how far in advance customers must order — so you’ve got time to prep and don’t get overloaded.",
+            },
+            {
+              image: "/images/gallery/gallery9.png",
+              kicker: "Your kitchen. Your rules.",
+              title: "Set slots. Cap orders. Keep control.",
+              subtitle: "You decide when you’re taking orders and when you’re not.",
+              desc: "PeerPlates fits around your life — not the other way round.",
+            },
             {
               image: "/images/gallery/gallery10.png",
               kicker: "Order management",
@@ -545,6 +547,9 @@ export default function Home() {
             },
           ]}
         />
+
+        {/* ✅ MOBILE FIX: add extra scroll runway so the last gallery becomes reachable */}
+        <div className="md:hidden h-[28vh]" aria-hidden="true" />
       </motion.section>
 
       <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-4 sm:px-6 lg:px-8">
