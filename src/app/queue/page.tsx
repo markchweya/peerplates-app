@@ -3,6 +3,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+
 import { MotionDiv } from "@/app/ui/motion";
 import LogoCinematic from "@/app/ui/LogoCinematic";
 
@@ -24,6 +26,49 @@ function formatStatus(s: QueueResult["review_status"]) {
   return "Pending";
 }
 
+/** Spoon + plate icon (matches food brand) */
+function FoodIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {/* plate */}
+      <circle cx="13" cy="12" r="6.25" />
+      <path d="M4 19h18" />
+
+      {/* spoon */}
+      <path d="M6.5 4.5c1.7 0 3 1.4 3 3.1 0 1.1-.6 2.1-1.5 2.7v8.7" />
+      <path d="M6.5 4.5c-1.7 0-3 1.4-3 3.1 0 1.1.6 2.1 1.5 2.7v8.7" />
+    </svg>
+  );
+}
+
+/** Clean “X” for close */
+function CloseIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 6l12 12" />
+      <path d="M18 6l-12 12" />
+    </svg>
+  );
+}
+
 const inputBase =
   "h-12 w-full rounded-2xl border border-[#fcb040] bg-white px-4 font-semibold text-black outline-none " +
   "focus:ring-4 focus:ring-[rgba(252,176,64,0.30)] placeholder:text-black/40";
@@ -37,6 +82,66 @@ const subtleBtn =
   "hover:bg-black/5 hover:-translate-y-[1px] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0";
 
 export default function QueuePage() {
+  // ---------- Responsive menu (hard guarantee: menu button never shows on desktop) ----------
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)"); // md breakpoint
+    const apply = () => setIsDesktop(mq.matches);
+    apply();
+
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
+    } else {
+      // @ts-ignore
+      mq.addListener(apply);
+      // @ts-ignore
+      return () => mq.removeListener(apply);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isDesktop) setMenuOpen(false);
+  }, [isDesktop]);
+
+  // ✅ Added Mission here (desktop + mobile)
+  const navLinks = useMemo(
+    () => [
+      { href: "/", label: "Home", variant: "ghost" as const },
+      { href: "/mission", label: "Mission", variant: "ghost" as const },
+      { href: "/faq", label: "FAQ", variant: "ghost" as const },
+      { href: "/privacy", label: "Privacy", variant: "ghost" as const },
+      { href: "/join", label: "Join waitlist", variant: "primary" as const },
+    ],
+    []
+  );
+
+  const btnBase =
+    "inline-flex items-center justify-center rounded-2xl px-5 py-2.5 font-extrabold shadow-sm transition hover:-translate-y-[1px] whitespace-nowrap";
+  const btnGhost = "border border-black/10 bg-white/90 backdrop-blur text-black hover:bg-black/5";
+  const btnPrimary = "bg-[#fcb040] text-black hover:opacity-95";
+
+  // lock scroll when mobile menu is open
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  // ---------- Queue flow ----------
   const [step, setStep] = useState<"email" | "code">("email");
 
   const [email, setEmail] = useState("");
@@ -76,14 +181,11 @@ export default function QueuePage() {
 
   useEffect(() => {
     if (!showCooldownMsg) return;
-
     const t = setInterval(() => setNowTick(Date.now()), 250);
-
     return () => clearInterval(t);
   }, [showCooldownMsg]);
 
   useEffect(() => {
-    // hide the security message automatically when cooldown ends
     if (!showCooldownMsg) return;
     if (cooldownUntil <= Date.now()) setShowCooldownMsg(false);
   }, [showCooldownMsg, cooldownUntil, nowTick]);
@@ -103,7 +205,7 @@ export default function QueuePage() {
       const token = String(code || "").trim();
 
       if (!em) throw new Error("Please enter your email.");
-      if (!token || token.length < 6) throw new Error("Please enter the 6‑digit code.");
+      if (!token || token.length < 6) throw new Error("Please enter the 6-digit code.");
 
       const res = await fetch("/api/queue-verify-code", {
         method: "POST",
@@ -133,7 +235,6 @@ export default function QueuePage() {
       return;
     }
 
-    // Only show the “security purposes…” message when the user tries to resend too soon.
     const inCooldown = cooldownUntil > Date.now();
     if (source === "resend" && inCooldown) {
       setShowCooldownMsg(true);
@@ -155,10 +256,7 @@ export default function QueuePage() {
       setInfo("Code sent. Check your inbox (and spam).");
       setShowCooldownMsg(false);
 
-      // start cooldown after a successful send
       setCooldownUntil(Date.now() + COOLDOWN_MS);
-
-      // move to code step automatically
       setStep("code");
     } catch (e: any) {
       setErr(e?.message || "Couldn’t send a new code.");
@@ -167,7 +265,7 @@ export default function QueuePage() {
     }
   };
 
-  // Auto-verify as soon as a valid code is entered (debounced)
+  // Auto-verify (debounced)
   useEffect(() => {
     if (step !== "code") return;
     if (!canVerify) return;
@@ -209,33 +307,113 @@ export default function QueuePage() {
         />
       </div>
 
+      {/* Header */}
+      <div className="sticky top-0 z-[60] border-b border-black/10 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+        <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-5 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <Link href="/" className="flex items-center min-w-0 overflow-hidden">
+              <span className="shrink-0">
+                <LogoCinematic size={56} wordScale={1} />
+              </span>
+            </Link>
+
+            {/* Desktop nav */}
+            <div className="hidden md:flex items-center gap-3 ml-auto">
+              {navLinks.map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className={[btnBase, l.variant === "primary" ? btnPrimary : btnGhost].join(" ")}
+                >
+                  {l.label}
+                </Link>
+              ))}
+            </div>
+
+            {/* Mobile menu button (icon only) */}
+            {!isDesktop ? (
+              <div className="ml-auto shrink-0 relative md:hidden">
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  aria-label={menuOpen ? "Close menu" : "Open menu"}
+                  aria-expanded={menuOpen}
+                  className={[
+                    "inline-flex items-center justify-center",
+                    "rounded-full border border-black/15 bg-white/95 backdrop-blur",
+                    "h-10 w-10 shadow-sm transition hover:-translate-y-[1px]",
+                    "text-black",
+                  ].join(" ")}
+                >
+                  {menuOpen ? <CloseIcon /> : <FoodIcon />}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Mobile dropdown */}
+        {!isDesktop ? (
+          <AnimatePresence initial={false}>
+            {menuOpen ? (
+              <motion.div
+                key="mobile-menu"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.22, ease: [0.2, 0.9, 0.2, 1] }}
+                className="md:hidden overflow-hidden"
+              >
+                <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-5 sm:px-6 lg:px-8 pb-5">
+                  <div className="mx-auto w-full max-w-[420px]">
+                    <div
+                      className="rounded-[28px] border border-black/10 bg-white/92 backdrop-blur p-4 shadow-sm"
+                      style={{ boxShadow: "0 18px 60px rgba(2,6,23,0.10)" }}
+                    >
+                      <div className="grid gap-2">
+                        {navLinks.map((l) => (
+                          <Link
+                            key={l.href}
+                            href={l.href}
+                            onClick={() => setMenuOpen(false)}
+                            className={[
+                              "w-full",
+                              btnBase,
+                              "px-5 py-3",
+                              l.variant === "primary" ? btnPrimary : btnGhost,
+                            ].join(" ")}
+                          >
+                            {l.label}
+                          </Link>
+                        ))}
+                      </div>
+
+                      <div className="mt-3 text-center text-xs font-semibold text-black/45">
+                        Taste. Tap. Order.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        ) : null}
+      </div>
+
+      {/* Content */}
       <div className="mx-auto w-full max-w-xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
-        <MotionDiv
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45 }}
-          className="flex items-center justify-between gap-4"
-        >
-          <Link href="/" className="flex items-center">
-            <LogoCinematic size={56} wordScale={1} />
-          </Link>
-
-          <div className="text-sm text-black/60 whitespace-nowrap">Queue</div>
-        </MotionDiv>
-
         <MotionDiv
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55, delay: 0.08 }}
-          className="mt-8 rounded-3xl border border-black/10 bg-white/90 backdrop-blur p-6 shadow-sm"
+          className="mt-2 rounded-3xl border border-black/10 bg-white/90 backdrop-blur p-6 shadow-sm"
           style={{ boxShadow: "0 18px 60px rgba(2,6,23,0.08)" }}
         >
           <h1 className="text-xl font-extrabold tracking-tight">Check your queue status</h1>
           <p className="mt-2 text-sm text-black/60">
-            Enter your email to receive a 6‑digit code. After you paste the code, we’ll show your status automatically.
+            Enter your email to receive a 6-digit code. After you paste the code, we’ll show your status automatically.
           </p>
 
-          {/* Only show this security message when user pressed resend and cooldown not over */}
           {showCooldownMsg && secondsLeft > 0 ? (
             <MotionDiv
               initial={{ opacity: 0, y: 6 }}
@@ -243,8 +421,8 @@ export default function QueuePage() {
               transition={{ duration: 0.2 }}
               className="mt-4 rounded-2xl border border-black/10 bg-black/5 p-3 text-sm text-black"
             >
-              For security purposes, you can only request this after <span className="font-extrabold">{secondsLeft}</span>{" "}
-              seconds.
+              For security purposes, you can only request this after{" "}
+              <span className="font-extrabold">{secondsLeft}</span> seconds.
             </MotionDiv>
           ) : null}
 
@@ -273,7 +451,6 @@ export default function QueuePage() {
 
           {!result ? (
             <div className="mt-6 grid gap-4">
-              {/* STEP 1: Email only */}
               <div className="grid gap-2">
                 <label className="text-sm font-semibold">Email</label>
                 <input
@@ -286,7 +463,6 @@ export default function QueuePage() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      // If we’re still on email step, send code and move forward
                       if (step === "email") sendNewCode("primary");
                     }
                   }}
@@ -299,9 +475,8 @@ export default function QueuePage() {
                 </button>
               ) : (
                 <>
-                  {/* STEP 2: Code */}
                   <div className="grid gap-2">
-                    <label className="text-sm font-semibold">6‑digit code</label>
+                    <label className="text-sm font-semibold">6-digit code</label>
                     <input
                       className={inputBase}
                       placeholder="123456"
@@ -321,7 +496,6 @@ export default function QueuePage() {
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {/* Keep a button (nice to have), but auto-verify still runs */}
                     <button className={primaryBtn} onClick={verifyCode} disabled={loading || !canVerify}>
                       {loading ? "Verifying…" : "Verify"}
                     </button>
@@ -338,9 +512,7 @@ export default function QueuePage() {
               )}
 
               {step === "email" ? (
-                <div className="text-xs text-black/50">
-                  You’ll receive an email from PeerPlates with a one-time 6‑digit code.
-                </div>
+                <div className="text-xs text-black/50">You’ll receive an email from PeerPlates with a one-time 6-digit code.</div>
               ) : null}
             </div>
           ) : (

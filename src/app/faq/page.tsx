@@ -2,10 +2,9 @@
 "use client";
 
 // ✅ FAQ PAGE (client component)
-// Fixes: Next.js build error by adding "use client" (uses useState/useMemo + framer-motion)
 
 import Link from "next/link";
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import LogoCinematic from "@/app/ui/LogoCinematic";
 import { MotionDiv } from "@/app/ui/motion";
@@ -22,23 +21,212 @@ type FAQItem = {
   a: ReactNode;
 };
 
+function FoodIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="13" cy="12" r="6.25" />
+      <path d="M4 19h18" />
+      <path d="M6.5 4.5c1.7 0 3 1.4 3 3.1 0 1.1-.6 2.1-1.5 2.7v8.7" />
+      <path d="M6.5 4.5c-1.7 0-3 1.4-3 3.1 0 1.1.6 2.1 1.5 2.7v8.7" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 6l12 12" />
+      <path d="M18 6l-12 12" />
+    </svg>
+  );
+}
+
 export default function FAQPage() {
+  // ✅ same menu behavior as Home: never show mobile menu on desktop
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)"); // md
+    const apply = () => setIsDesktop(mq.matches);
+    apply();
+
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
+    } else {
+      // @ts-ignore
+      mq.addListener(apply);
+      // @ts-ignore
+      return () => mq.removeListener(apply);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isDesktop) setMenuOpen(false);
+  }, [isDesktop]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  // ✅ Added Mission link
+  const navLinks = useMemo(
+    () => [
+      { href: "/", label: "Home", variant: "ghost" as const },
+      { href: "/mission", label: "Mission", variant: "ghost" as const },
+      { href: "/queue", label: "Check queue", variant: "ghost" as const },
+      { href: "/privacy", label: "Privacy", variant: "ghost" as const },
+      { href: "/join", label: "Join waitlist", variant: "primary" as const },
+    ],
+    []
+  );
+
+  const btnBase =
+    "inline-flex items-center justify-center rounded-2xl px-5 py-2.5 font-extrabold shadow-sm transition hover:-translate-y-[1px] whitespace-nowrap";
+  const btnGhost = "border border-slate-200 bg-white/90 backdrop-blur text-slate-900 hover:bg-slate-50";
+  const btnPrimary = "bg-[#fcb040] text-slate-900 hover:opacity-95";
+
   return (
     <main className="min-h-screen bg-white text-slate-900">
-      <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
-        <MotionDiv
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45 }}
-          className="flex items-center justify-between gap-4"
-        >
-          <Link href="/" className="flex items-center">
-            <LogoCinematic size={56} wordScale={1} />
-          </Link>
+      {/* Header with menu */}
+      <div className="fixed top-0 left-0 right-0 z-[100] pointer-events-auto">
+        <div className="border-b border-slate-200/60 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+          <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-5 sm:px-6 lg:px-8 py-4">
+            <MotionDiv
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45 }}
+              className="flex items-center gap-3 min-w-0"
+            >
+              <Link href="/" className="flex items-center min-w-0 overflow-hidden">
+                <span className="shrink-0">
+                  <LogoCinematic size={56} wordScale={1} />
+                </span>
+              </Link>
 
-          <div className="text-sm text-slate-900/60 whitespace-nowrap">FAQ</div>
-        </MotionDiv>
+              {/* Desktop nav */}
+              <div className="hidden md:flex items-center gap-3 ml-auto">
+                {navLinks.map((l) => (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    className={[btnBase, l.variant === "primary" ? btnPrimary : btnGhost].join(" ")}
+                  >
+                    {l.label}
+                  </Link>
+                ))}
+              </div>
+
+              {/* Page label */}
+              <div className="hidden sm:block md:hidden ml-auto text-sm text-slate-900/60 whitespace-nowrap">
+                FAQ
+              </div>
+
+              {/* Mobile icon button */}
+              {!isDesktop ? (
+                <div className="ml-auto shrink-0 relative md:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setMenuOpen((v) => !v)}
+                    aria-label={menuOpen ? "Close menu" : "Open menu"}
+                    aria-expanded={menuOpen}
+                    className={[
+                      "inline-flex items-center justify-center",
+                      "rounded-full border border-slate-200 bg-white/95 backdrop-blur",
+                      "h-10 w-10 shadow-sm transition hover:-translate-y-[1px]",
+                      "text-slate-900",
+                    ].join(" ")}
+                  >
+                    {menuOpen ? <CloseIcon /> : <FoodIcon />}
+                  </button>
+                </div>
+              ) : null}
+            </MotionDiv>
+          </div>
+
+          {/* Mobile dropdown */}
+          {!isDesktop ? (
+            <AnimatePresence initial={false}>
+              {menuOpen ? (
+                <motion.div
+                  key="mobile-menu"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.22, ease: [0.2, 0.9, 0.2, 1] }}
+                  className="md:hidden overflow-hidden"
+                >
+                  <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-5 sm:px-6 lg:px-8 pb-5">
+                    <div className="mx-auto w-full max-w-[420px]">
+                      <div
+                        className="rounded-[28px] border border-slate-200 bg-white/92 backdrop-blur p-4 shadow-sm"
+                        style={{ boxShadow: "0 18px 60px rgba(2,6,23,0.10)" }}
+                      >
+                        <div className="grid gap-2">
+                          {navLinks.map((l) => (
+                            <Link
+                              key={l.href}
+                              href={l.href}
+                              onClick={() => setMenuOpen(false)}
+                              className={[
+                                "w-full",
+                                btnBase,
+                                "px-5 py-3",
+                                l.variant === "primary" ? btnPrimary : btnGhost,
+                              ].join(" ")}
+                            >
+                              {l.label}
+                            </Link>
+                          ))}
+                        </div>
+
+                        <div className="mt-3 text-center text-xs font-semibold text-slate-500">
+                          Taste. Tap. Order.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          ) : null}
+        </div>
       </div>
+
+      {/* Spacer so content doesn't go under fixed header */}
+      <div className="h-[84px]" />
 
       <FAQSection />
     </main>
@@ -182,7 +370,9 @@ export function FAQSection({
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: false, amount: 0.35 }}
                 transition={{ duration: 0.55, delay: i * 0.03 }}
-                className={cn("rounded-[28px] border border-slate-200 bg-white/85 backdrop-blur shadow-sm overflow-hidden")}
+                className={cn(
+                  "rounded-[28px] border border-slate-200 bg-white/85 backdrop-blur shadow-sm overflow-hidden"
+                )}
                 style={{ boxShadow: "0 18px 60px rgba(2,6,23,0.07)" }}
               >
                 <button
@@ -192,7 +382,9 @@ export function FAQSection({
                 >
                   <div className="min-w-0">
                     <div className="text-base sm:text-lg font-extrabold text-slate-900">{it.q}</div>
-                    <div className="mt-1 text-xs font-semibold text-slate-500">{open ? "Tap to close" : "Tap to open"}</div>
+                    <div className="mt-1 text-xs font-semibold text-slate-500">
+                      {open ? "Tap to close" : "Tap to open"}
+                    </div>
                   </div>
 
                   <div className="shrink-0 mt-1">

@@ -6,6 +6,7 @@ import LogoCinematic from "@/app/ui/LogoCinematic";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { MotionDiv } from "@/app/ui/motion";
+import { AnimatePresence, motion } from "framer-motion";
 
 const BRAND_ORANGE = "#fcb040";
 const BRAND_BROWN = "#8a6b43";
@@ -46,6 +47,46 @@ function CheckIcon({ className = "" }: { className?: string }) {
   );
 }
 
+/** Spoon + plate icon (food brand) */
+function FoodIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="13" cy="12" r="6.25" />
+      <path d="M4 19h18" />
+      <path d="M6.5 4.5c1.7 0 3 1.4 3 3.1 0 1.1-.6 2.1-1.5 2.7v8.7" />
+      <path d="M6.5 4.5c-1.7 0-3 1.4-3 3.1 0 1.1.6 2.1 1.5 2.7v8.7" />
+    </svg>
+  );
+}
+
+/** Close icon */
+function CloseIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 6l12 12" />
+      <path d="M18 6l-12 12" />
+    </svg>
+  );
+}
+
 function StatusPill() {
   return (
     <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-sm font-extrabold text-slate-900 shadow-sm backdrop-blur">
@@ -78,6 +119,66 @@ function ThanksInner() {
   // Only used for consumers
   const [position, setPosition] = useState<number | null>(null);
   const [posLoading, setPosLoading] = useState(false);
+
+  // ---------- Responsive menu (hard guarantee: menu button never shows on desktop) ----------
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)"); // md
+    const apply = () => setIsDesktop(mq.matches);
+    apply();
+
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
+    } else {
+      // @ts-ignore
+      mq.addListener(apply);
+      // @ts-ignore
+      return () => mq.removeListener(apply);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isDesktop) setMenuOpen(false);
+  }, [isDesktop]);
+
+  // lock scroll when mobile menu open
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  // ✅ Added Mission
+  const navLinks = useMemo(
+    () => [
+      { href: "/", label: "Home", variant: "ghost" as const },
+      { href: "/mission", label: "Mission", variant: "ghost" as const },
+      { href: "/faq", label: "FAQ", variant: "ghost" as const },
+      { href: "/privacy", label: "Privacy", variant: "ghost" as const },
+      { href: "/queue", label: "Check queue", variant: "ghost" as const },
+      { href: "/join", label: "Join waitlist", variant: "primary" as const },
+    ],
+    []
+  );
+
+  const btnBase =
+    "inline-flex items-center justify-center rounded-2xl px-5 py-2.5 font-extrabold shadow-sm transition hover:-translate-y-[1px] whitespace-nowrap";
+  const btnGhost = "border border-slate-200 bg-white/90 backdrop-blur text-slate-900 hover:bg-slate-50";
+  const btnPrimary = "bg-[#fcb040] text-slate-900 hover:opacity-95";
 
   useEffect(() => {
     setBaseUrl(window.location.origin);
@@ -131,26 +232,118 @@ function ThanksInner() {
         />
       </div>
 
-      <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
-        <MotionDiv
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45 }}
-          className="flex items-center justify-between gap-4"
-        >
-          <Link href="/" className="flex items-center">
-            <LogoCinematic size={56} wordScale={1} />
-          </Link>
+      {/* Header */}
+      <div className="sticky top-0 z-[60] border-b border-slate-200/70 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+        <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-5 sm:px-6 lg:px-8 py-4">
+          <MotionDiv
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45 }}
+            className="flex items-center gap-3 min-w-0"
+          >
+            <Link href="/" className="flex items-center min-w-0 overflow-hidden">
+              <span className="shrink-0">
+                <LogoCinematic size={56} wordScale={1} />
+              </span>
+            </Link>
 
-          {/* ✅ no emoji check anymore */}
+            {/* Desktop nav */}
+            <div className="hidden md:flex items-center gap-3 ml-auto">
+              {navLinks.map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className={[btnBase, l.variant === "primary" ? btnPrimary : btnGhost].join(" ")}
+                >
+                  {l.label}
+                </Link>
+              ))}
+            </div>
+
+            {/* Status pill (hide on tiny screens to avoid crowding) */}
+            <div className="hidden sm:block md:hidden ml-auto">
+              <StatusPill />
+            </div>
+
+            {/* Mobile icon button (plate/spoon) */}
+            {!isDesktop ? (
+              <div className="ml-auto shrink-0 relative md:hidden">
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  aria-label={menuOpen ? "Close menu" : "Open menu"}
+                  aria-expanded={menuOpen}
+                  className={[
+                    "inline-flex items-center justify-center",
+                    "rounded-full border border-slate-200 bg-white/95 backdrop-blur",
+                    "h-10 w-10 shadow-sm transition hover:-translate-y-[1px]",
+                    "text-slate-900",
+                  ].join(" ")}
+                >
+                  {menuOpen ? <CloseIcon /> : <FoodIcon />}
+                </button>
+              </div>
+            ) : null}
+          </MotionDiv>
+        </div>
+
+        {/* Mobile dropdown */}
+        {!isDesktop ? (
+          <AnimatePresence initial={false}>
+            {menuOpen ? (
+              <motion.div
+                key="mobile-menu"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.22, ease: [0.2, 0.9, 0.2, 1] }}
+                className="md:hidden overflow-hidden"
+              >
+                <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl px-5 sm:px-6 lg:px-8 pb-5">
+                  <div className="mx-auto w-full max-w-[420px]">
+                    <div
+                      className="rounded-[28px] border border-slate-200 bg-white/92 backdrop-blur p-4 shadow-sm"
+                      style={{ boxShadow: "0 18px 60px rgba(2,6,23,0.10)" }}
+                    >
+                      <div className="grid gap-2">
+                        {navLinks.map((l) => (
+                          <Link
+                            key={l.href}
+                            href={l.href}
+                            onClick={() => setMenuOpen(false)}
+                            className={[
+                              "w-full",
+                              btnBase,
+                              "px-5 py-3",
+                              l.variant === "primary" ? btnPrimary : btnGhost,
+                            ].join(" ")}
+                          >
+                            {l.label}
+                          </Link>
+                        ))}
+                      </div>
+
+                      <div className="mt-3 text-center text-xs font-semibold text-slate-500">Taste. Tap. Order.</div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        ) : null}
+      </div>
+
+      <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
+        {/* On desktop, show status pill neatly under header line */}
+        <div className="md:flex md:justify-end hidden">
           <StatusPill />
-        </MotionDiv>
+        </div>
 
         <MotionDiv
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55, delay: 0.08 }}
-          className="mt-8 sm:mt-10 rounded-[36px] border border-[#fcb040]/60 bg-white/85 backdrop-blur p-6 sm:p-8 shadow-sm"
+          className="mt-6 rounded-[36px] border border-[#fcb040]/60 bg-white/85 backdrop-blur p-6 sm:p-8 shadow-sm"
           style={{ boxShadow: "0 22px 70px rgba(2,6,23,0.10)" }}
         >
           <h1 className="text-[clamp(2.0rem,4vw,2.8rem)] font-extrabold tracking-tight leading-[0.95]">
@@ -173,9 +366,7 @@ function ThanksInner() {
               <div className="mt-1 text-3xl font-extrabold tracking-tight">
                 {id ? (posLoading ? "Loading…" : position ? `#${position}` : "—") : "—"}
               </div>
-              <div className="mt-1 text-xs text-slate-900/60">
-                MVP estimate based on signup time and role.
-              </div>
+              <div className="mt-1 text-xs text-slate-900/60">MVP estimate based on signup time and role.</div>
             </div>
           ) : (
             <div className="mt-6 rounded-3xl border border-[#fcb040]/55 bg-white p-5">
