@@ -17,7 +17,9 @@ type Entry = {
   phone: string | null;
   is_student: boolean | null;
   university: string | null;
-  answers: Record<string, any>;
+
+  // ✅ no any
+  answers: Record<string, unknown>;
 
   referral_code: string | null;
   referred_by: string | null;
@@ -52,18 +54,28 @@ type Entry = {
 const BRAND = "#fcb040";
 const SECRET_KEY = "peerplates_admin_secret";
 
-function safeStr(v: any) {
+function getErrorMessage(e: unknown, fallback = "Something went wrong") {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return fallback;
+  }
+}
+
+function safeStr(v: unknown) {
   if (v === null || v === undefined) return "";
   return String(v);
 }
 
-function joinArr(v: any): string {
+function joinArr(v: unknown): string {
   if (!v) return "";
   if (Array.isArray(v)) return v.filter(Boolean).join(", ");
   return String(v);
 }
 
-function normalizeAnswerValue(v: any): string {
+function normalizeAnswerValue(v: unknown): string {
   if (v === null || v === undefined) return "";
   if (Array.isArray(v)) return v.filter(Boolean).join(", ");
   if (typeof v === "object") return JSON.stringify(v);
@@ -74,10 +86,8 @@ function pillClass(status: ReviewStatus) {
   // orange + neutrals only
   if (status === "approved")
     return "bg-[rgba(252,176,64,0.18)] text-black border border-[rgba(252,176,64,0.55)]";
-  if (status === "rejected")
-    return "bg-black/5 text-black border border-black/10";
-  if (status === "reviewed")
-    return "bg-black/5 text-black/80 border border-black/10";
+  if (status === "rejected") return "bg-black/5 text-black border border-black/10";
+  if (status === "reviewed") return "bg-black/5 text-black/80 border border-black/10";
   return "bg-[rgba(252,176,64,0.12)] text-black border border-[rgba(252,176,64,0.45)]";
 }
 
@@ -272,13 +282,19 @@ export default function AdminPage() {
       const res = await fetch(`/api/admin/list?${queryString}`, {
         headers: { "x-admin-secret": adminSecret },
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || `Failed (${res.status})`);
+
+      const data = (await res.json().catch(() => ({}))) as unknown as {
+        rows?: unknown;
+        total?: unknown;
+        error?: unknown;
+      };
+
+      if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : `Failed (${res.status})`);
 
       setRows(Array.isArray(data?.rows) ? (data.rows as Entry[]) : []);
       setTotal(Number(data?.total || 0));
-    } catch (e: any) {
-      setErr(e?.message || "Failed to load");
+    } catch (e: unknown) {
+      setErr(getErrorMessage(e, "Failed to load"));
       setRows([]);
       setTotal(0);
     } finally {
@@ -314,7 +330,7 @@ export default function AdminPage() {
     setRows((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
   };
 
-  const callUpdate = async (payload: Record<string, any>) => {
+  const callUpdate = async (payload: Record<string, unknown>) => {
     const res = await fetch("/api/admin/update", {
       method: "PATCH",
       headers: {
@@ -323,8 +339,14 @@ export default function AdminPage() {
       },
       body: JSON.stringify(payload),
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.error || `Update failed (${res.status})`);
+
+    const data = (await res.json().catch(() => ({}))) as unknown as { row?: unknown; error?: unknown };
+
+    if (!res.ok) {
+      const msg = typeof data?.error === "string" ? data.error : `Update failed (${res.status})`;
+      throw new Error(msg);
+    }
+
     return data?.row as Entry;
   };
 
@@ -365,8 +387,8 @@ export default function AdminPage() {
           ? ""
           : String(updated.vendor_queue_override)
       );
-    } catch (e: any) {
-      setErr(e?.message || "Update failed");
+    } catch (e: unknown) {
+      setErr(getErrorMessage(e, "Update failed"));
     }
   };
 
@@ -384,8 +406,8 @@ export default function AdminPage() {
       });
       updateRowInState(updated);
       setVendorOverrideDraft("");
-    } catch (e: any) {
-      setErr(e?.message || "Failed to clear override");
+    } catch (e: unknown) {
+      setErr(getErrorMessage(e, "Failed to clear override"));
     }
   };
 
@@ -400,8 +422,9 @@ export default function AdminPage() {
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || `Export failed (${res.status})`);
+        const data = (await res.json().catch(() => ({}))) as unknown as { error?: unknown };
+        const msg = typeof data?.error === "string" ? data.error : `Export failed (${res.status})`;
+        throw new Error(msg);
       }
 
       const blob = await res.blob();
@@ -414,8 +437,8 @@ export default function AdminPage() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-    } catch (e: any) {
-      setErr(e?.message || "Export failed");
+    } catch (e: unknown) {
+      setErr(getErrorMessage(e, "Export failed"));
     }
   };
 
@@ -683,13 +706,21 @@ export default function AdminPage() {
                       <td className="p-3 text-black/70 whitespace-nowrap">{hasIgVal ? "Yes" : "No"}</td>
 
                       <td className="p-3 whitespace-nowrap">
-                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-extrabold ${pillClass(r.review_status)}`}>
+                        <span
+                          className={`inline-flex rounded-full px-3 py-1 text-xs font-extrabold ${pillClass(
+                            r.review_status
+                          )}`}
+                        >
                           {r.review_status}
                         </span>
                       </td>
 
-                      <td className="p-3 whitespace-nowrap">{r.role === "vendor" ? r.vendor_queue_override ?? "—" : "—"}</td>
-                      <td className="p-3 font-semibold whitespace-nowrap">{r.role === "vendor" ? r.vendor_priority_score : points}</td>
+                      <td className="p-3 whitespace-nowrap">
+                        {r.role === "vendor" ? r.vendor_queue_override ?? "—" : "—"}
+                      </td>
+                      <td className="p-3 font-semibold whitespace-nowrap">
+                        {r.role === "vendor" ? r.vendor_priority_score : points}
+                      </td>
 
                       <td className="p-3 text-black/70 whitespace-nowrap">
                         {r.role === "consumer" ? (
@@ -702,7 +733,9 @@ export default function AdminPage() {
                         )}
                       </td>
 
-                      <td className="p-3 text-black/60 whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</td>
+                      <td className="p-3 text-black/60 whitespace-nowrap">
+                        {new Date(r.created_at).toLocaleString()}
+                      </td>
 
                       {/* ✅ Answer cells: show "No" instead of dashes when empty */}
                       {answerKeys.map((k) => {
@@ -741,7 +774,9 @@ export default function AdminPage() {
           {/* Pagination */}
           <div className="mt-4 flex items-center justify-between">
             <div className="text-xs text-black/50">
-              {total === 0 ? "—" : `Showing ${Math.min(total, offset + 1)}–${Math.min(total, offset + rows.length)} of ${total}`}
+              {total === 0
+                ? "—"
+                : `Showing ${Math.min(total, offset + 1)}–${Math.min(total, offset + rows.length)} of ${total}`}
             </div>
             <div className="flex gap-2">
               <button
@@ -792,8 +827,7 @@ export default function AdminPage() {
                   <div className="text-sm text-black/80">
                     <span className="font-semibold">Bus:</span>{" "}
                     {typeof selected.bus_minutes === "number" ? `${selected.bus_minutes} min` : "—"}{" "}
-                    <span className="text-black/40">•</span>{" "}
-                    <span className="font-semibold">IG:</span>{" "}
+                    <span className="text-black/40">•</span> <span className="font-semibold">IG:</span>{" "}
                     {safeStr(selected.instagram_handle).trim() ? safeStr(selected.instagram_handle) : "No"}
                   </div>
                   <div className="text-sm text-black/80">
@@ -807,8 +841,8 @@ export default function AdminPage() {
                   <div className="text-sm font-extrabold">Referrals</div>
                   <div className="text-sm text-black/80">
                     <span className="font-semibold">Points:</span> {selected.referral_points ?? 0}{" "}
-                    <span className="text-black/40">•</span>{" "}
-                    <span className="font-semibold">Signups:</span> {selected.referrals_count ?? 0}
+                    <span className="text-black/40">•</span> <span className="font-semibold">Signups:</span>{" "}
+                    {selected.referrals_count ?? 0}
                   </div>
                   {selected.referral_code ? (
                     <div className="text-xs text-black/50">
