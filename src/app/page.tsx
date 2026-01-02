@@ -504,43 +504,40 @@ export default function Home() {
               subtitle: "Your profile. Your followers. Your drops.",
               desc: "Build a loyal following with your own vendor profile — customers can follow, view your posts, and stay updated on your collection days and latest drops.",
             },
+        {
+  image: "/images/gallery/gallery5.jpeg",
+  kicker: "Analytics",
+  title: "Eliminate the guesswork — PeerPlates tracks it for you.",
+  subtitle: "Orders, earnings, and what’s trending.",
+  desc: "Orders, revenue, customer activity, peak times — all in one clean dashboard.",
+},
+{
+  image: "/images/gallery/gallery6.png",
+  kicker: "Insights",
+  title: "Make smarter decisions with live performance stats.",
+  subtitle: "See your top sellers — fast.",
+  desc: "Know what’s working. See what’s moving fastest — and double down on the dishes that drive revenue.",
+},
+
+          {
+  image: "/images/gallery/gallery7.jpeg",
+  kicker: "Vendor control",
+  title: "Set a cutoff. Stay in control.",
+  subtitle: "Orders close when you say so.",
+  desc: "Choose how far in advance customers must order — so you’ve got time to prep and don’t get overloaded.",
+},
+
+          
+          {
+  image: "/images/gallery/gallery9.png",
+  kicker: "Your kitchen. Your rules.",
+  title: "Set slots. Cap orders. Keep control.",
+  subtitle: "You decide when you’re taking orders and when you’re not.",
+  desc: "PeerPlates fits around your life — not the other way round.",
+},
+
             {
-              image: "/images/gallery/gallery5.jpeg",
-              kicker: "Analytics",
-              title: "Eliminate the guesswork — PeerPlates tracks it for you.",
-              subtitle: "Orders, earnings, and what’s trending.",
-              desc: "Track orders and revenue in one dashboard, and instantly spot your best-selling items without manual tracking.",
-            },
-            {
-              image: "/images/gallery/gallery6.png",
-              kicker: "Insights",
-              title: "Make smarter decisions with live performance stats.",
-              subtitle: "See your top sellers — fast.",
-              desc: "Get a clear snapshot of sales performance, customer activity, and your strongest items — all at a glance.",
-            },
-            {
-              image: "/images/gallery/gallery7.jpeg",
-              kicker: "Vendor control",
-              title: "Vendor control, made effortless for customers.",
-              subtitle: "You set the rules — customers just book.",
-              desc: "Manage your order flow in one place: accept orders, set availability, and keep customers aligned without endless messages.",
-            },
-            {
-              image: "/images/gallery/gallery8.png",
-              kicker: "Prep time & capacity",
-              title: "No confusion — every slot is intentional.",
-              subtitle: "Minimum prep time, built in.",
-              desc: "Set your minimum preparation window so customers only checkout when you can realistically deliver — smooth for you, simple for them.",
-            },
-            {
-              image: "/images/gallery/gallery9.png",
-              kicker: "Pickup scheduling",
-              title: "Pickup times that feel like a storefront, not a chat.",
-              subtitle: "Choose a slot. Checkout. Done.",
-              desc: "Customers select a pickup time, see the location, and checkout cleanly — no back-and-forth, no coordination stress.",
-            },
-            {
-              image: "/images/gallery/gallery10.jpeg",
+              image: "/images/gallery/gallery10.png",
               kicker: "Order management",
               title: "Stay organised. Avoid mix-ups.",
               subtitle: "Filter by pickup date — today, this week, or any day.",
